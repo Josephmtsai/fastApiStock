@@ -14,7 +14,10 @@
       "Bash(/c/Users/Joseph/anaconda3/Scripts/uv venv:*)",
       "Bash(/c/Users/Joseph/anaconda3/Scripts/uv add:*)",
       "Bash(/c/Users/Joseph/anaconda3/Scripts/uv pip:*)",
-      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv run:*)"
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv run:*)",
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(uvx:*)",
+      "Bash(cat D:/claude/fastApiStock/.claude/skills/speckit-constitution/*.md)"
     ]
   }
 }

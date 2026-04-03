@@ -1,4 +1,4 @@
-# Python 專案規範與工程準則 (Optimized for UV & Ruff)
+﻿# Python 專案規範與工程準則 (Optimized for UV & Ruff)
 
 ## 1. 環境與依賴管理 (Environment)
 - **Runtime**: Python 3.11+ (透過 `.python-version` 管理)。

@@ -39,3 +39,7 @@ quote-style = "single"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=src --cov-report=term-missing"
+
+
+[tool.uv]
+scripts = { dev = "uvicorn src.main:app --reload" }
