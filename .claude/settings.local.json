@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx skillfish:*)",
+      "Bash(uv init:*)",
+      "Bash(where uv:*)",
+      "Bash(winget list:*)",
+      "Bash(cmd:*)",
+      "Bash(uv --version)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(powershell:*)",
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv init:*)",
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv python:*)",
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv venv:*)",
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv add:*)",
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv pip:*)",
+      "Bash(/c/Users/Joseph/anaconda3/Scripts/uv run:*)"
+    ]
+  }
+}
