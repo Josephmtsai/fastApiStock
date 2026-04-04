@@ -1,6 +1,6 @@
 1. 請實作 串接  yfinance 並且將依賴包安裝到.venv
 
-2. 請實作GET /api/v1/stock/{id}  {Id}為台股代碼 ex 0050,2330,2317 使用逗號串接
+2. 請實作GET /api/v1/stock/{id}  {Id}為台股代碼 ex 0050,2330,2317 使用逗號串接 
 
 Response 為
 { "status": "success"|"error", "data": [
@@ -16,3 +16,5 @@ Response 為
 
 
 3. 資料邏輯串接請依照constitution or Plan放在對應的folder
+
+4. 建立對應的測試範例
