@@ -7,16 +7,14 @@ router level in accordance with Constitution Principle III.
 import logging
 
 from fastapi import APIRouter, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
+from fastapistock.rate_limit import limiter
 from fastapistock.schemas.common import ResponseEnvelope
 from fastapistock.schemas.stock import StockData
 from fastapistock.services.stock_service import get_stocks
 
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix='/api/v1/stock', tags=['stocks'])
 
 

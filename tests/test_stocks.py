@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from unittest.mock import _patch, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from fastapistock.main import app
@@ -31,14 +30,6 @@ _MOCK_2330 = StockData(
 )
 
 
-@pytest.fixture(autouse=True)
-def _no_file_cache(tmp_path, monkeypatch):
-    """Redirect file cache to a temp directory and always report miss."""
-    import fastapistock.cache.file_cache as fc
-
-    monkeypatch.setattr(fc, '_CACHE_ROOT', tmp_path)
-
-
 def _patch_fetch(
     side_effect: Callable[[str], StockData] | Exception | type[Exception],
 ) -> _patch:  # type: ignore[type-arg]
@@ -50,7 +41,7 @@ def _patch_fetch(
 
 
 class TestGetSingleStock:
-    def test_success_returns_envelope(self):
+    def test_success_returns_envelope(self) -> None:
         with _patch_fetch(lambda code: _MOCK_0050):
             response = client.get('/api/v1/stock/0050')
 
@@ -60,7 +51,7 @@ class TestGetSingleStock:
         assert body['message'] == ''
         assert len(body['data']) == 1
 
-    def test_response_fields(self):
+    def test_response_fields(self) -> None:
         with _patch_fetch(lambda code: _MOCK_0050):
             body = client.get('/api/v1/stock/0050').json()
 
@@ -72,7 +63,7 @@ class TestGetSingleStock:
         assert item['LastDayPrice'] == 184.00
         assert item['Volume'] == 12345678
 
-    def test_not_found_returns_404(self):
+    def test_not_found_returns_404(self) -> None:
         with _patch_fetch(
             side_effect=StockNotFoundError("No data found for symbol '9999'")
         ):
@@ -92,7 +83,7 @@ class TestGetMultipleStocks:
             raise StockNotFoundError(f"No data found for symbol '{code}'")
         return mapping[code]
 
-    def test_two_stocks_returned_in_order(self):
+    def test_two_stocks_returned_in_order(self) -> None:
         with _patch_fetch(self._mock_fetch):
             response = client.get('/api/v1/stock/0050,2330')
 
@@ -102,14 +93,14 @@ class TestGetMultipleStocks:
         assert data[0]['Name'] == '0050'
         assert data[1]['Name'] == '2330'
 
-    def test_whitespace_around_codes_is_ignored(self):
+    def test_whitespace_around_codes_is_ignored(self) -> None:
         with _patch_fetch(self._mock_fetch):
             response = client.get('/api/v1/stock/0050, 2330')
 
         assert response.status_code == 200
         assert len(response.json()['data']) == 2
 
-    def test_one_invalid_code_returns_404(self):
+    def test_one_invalid_code_returns_404(self) -> None:
         with _patch_fetch(self._mock_fetch):
             response = client.get('/api/v1/stock/0050,9999')
 
@@ -118,7 +109,7 @@ class TestGetMultipleStocks:
 
 
 class TestCacheBehaviour:
-    def test_cache_hit_skips_fetch(self):
+    def test_cache_hit_skips_fetch(self) -> None:
         call_count = 0
 
         def counting_fetch(code: str) -> StockData:
@@ -130,5 +121,5 @@ class TestCacheBehaviour:
             client.get('/api/v1/stock/0050')
             client.get('/api/v1/stock/0050')
 
-        # Second request should be served from the file cache (same day key)
+        # Second request is served from Redis cache (same day key)
         assert call_count == 1

@@ -7,7 +7,7 @@ No HTTP imports belong here; all external I/O goes through repositories.
 import logging
 from datetime import date
 
-from fastapistock.cache import file_cache
+from fastapistock.cache import redis_cache
 from fastapistock.repositories.twstock_repo import fetch_stock
 from fastapistock.schemas.stock import StockData
 
@@ -17,21 +17,21 @@ _CACHE_TTL = 300  # 5 minutes
 
 
 def _cache_key(code: str) -> str:
-    """Build the file-cache key for today's quote of *code*.
+    """Build the Redis cache key for today's quote of *code*.
 
     Args:
         code: Taiwan stock code (e.g. '0050').
 
     Returns:
-        Cache key string (e.g. '0050/2026-04-03').
+        Cache key string (e.g. ``'stock:0050:2026-04-04'``).
     """
-    return f'{code}/{date.today().isoformat()}'
+    return f'stock:{code}:{date.today().isoformat()}'
 
 
 def get_stock(code: str) -> StockData:
     """Return the latest snapshot for a single Taiwan stock code.
 
-    Checks the file cache first; falls back to the yfinance repository
+    Checks the Redis cache first; falls back to the yfinance repository
     on a miss and stores the result before returning.
 
     Args:
@@ -45,14 +45,14 @@ def get_stock(code: str) -> StockData:
             symbol yields no data from Yahoo Finance.
     """
     key = _cache_key(code)
-    cached = file_cache.get(key, _CACHE_TTL)
+    cached = redis_cache.get(key)
     if cached is not None:
         logger.debug('Cache hit for %s', code)
         return StockData.model_validate(cached)
 
     logger.info('Cache miss for %s – fetching from yfinance', code)
     stock = fetch_stock(code)
-    file_cache.put(key, stock.model_dump())
+    redis_cache.put(key, stock.model_dump(), _CACHE_TTL)
     return stock
 
 

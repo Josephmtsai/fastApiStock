@@ -56,7 +56,7 @@ test safety net. Mock-heavy tests create false confidence.
 Every API response MUST follow the envelope:
 `{ "status": "success"|"error", "data": {} | [], "message": "" }`.
 
-- All routes MUST implement redis rate limiting at the router level with Redis 
+- All routes MUST implement redis rate limiting at the router level with Redis
 - Error responses MUST use correct HTTP status codes (4xx = client error, 5xx = server error).
 - Routes MUST be organized via `APIRouter`; no route definitions in `main.py`.
 - HTTP 422 validation errors MUST surface as the standard envelope, not raw FastAPI detail.
