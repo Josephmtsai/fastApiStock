@@ -65,10 +65,9 @@ structure must support it from day one.
 - **FR-002**: Pydantic request/response models MUST live in `src/schemas/`.
 - **FR-003**: Business logic MUST live in `src/services/`; route handlers MUST only call services.
 - **FR-004**: External data-fetch logic (TW stock APIs, files) MUST live in `src/repositories/`.
-- **FR-005**: Caching logic MUST be isolated in `src/cache/`.
-- **FR-006**: App settings MUST be loaded via a `Settings` class in `src/config.py` using `python-dotenv`.
-- **FR-007**: Shared `Depends()` functions MUST be in `src/dependencies.py`.
-- **FR-008**: All API responses MUST use the envelope schema `ResponseEnvelope[T]` from `src/schemas/common.py`.
+- **FR-005**: App settings MUST be loaded via a `Settings` class in `src/config.py` using `python-dotenv`.
+- **FR-006**: Shared `Depends()` functions MUST be in `src/dependencies.py`.
+- **FR-007**: All API responses MUST use the envelope schema `ResponseEnvelope[T]` from `src/schemas/common.py`.
 
 ### Key Entities
 

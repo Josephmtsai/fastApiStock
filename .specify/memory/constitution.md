@@ -56,7 +56,7 @@ test safety net. Mock-heavy tests create false confidence.
 Every API response MUST follow the envelope:
 `{ "status": "success"|"error", "data": {} | [], "message": "" }`.
 
-- All routes MUST implement rate limiting at the router level.
+- All routes MUST implement redis rate limiting at the router level with Redis 
 - Error responses MUST use correct HTTP status codes (4xx = client error, 5xx = server error).
 - Routes MUST be organized via `APIRouter`; no route definitions in `main.py`.
 - HTTP 422 validation errors MUST surface as the standard envelope, not raw FastAPI detail.
@@ -70,7 +70,7 @@ integration bugs across different callers.
 External calls to TW stock data sources MUST include an explicit `timeout` and a random delay
 (0.5–2 s) between successive requests.
 
-- All fetched data MUST be cached locally to avoid redundant network calls.
+- All fetched data MUST be cached by Redis to avoid redundant network calls.
 - Caching MUST be implemented with `redis-py`; custom TTL logic is PROHIBITED.
 - Cached endpoints SHOULD respond within 200 ms; live-fetch endpoints within 2 s.
 - Every outgoing HTTP request MUST declare a `timeout` argument — no open-ended waits.
