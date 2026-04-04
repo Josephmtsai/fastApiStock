@@ -28,7 +28,7 @@ repos:
     rev: v1.20.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML]
+        additional_dependencies: [types-requests, types-PyYAML, pydantic]
         args: [--config-file=mypy.ini]
 
   # Commit message 規範（Conventional Commits）
