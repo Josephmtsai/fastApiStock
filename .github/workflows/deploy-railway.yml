@@ -20,4 +20,4 @@ jobs:
       - name: Deploy to Railway
         run: railway up --detach --service fastapistock
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAYTOKEN }}
