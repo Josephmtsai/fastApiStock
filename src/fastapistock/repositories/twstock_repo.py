@@ -67,20 +67,23 @@ def fetch_stock(code: str) -> StockData:
         StockNotFoundError: If yfinance returns an empty history for *code*.
     """
     sleep_s = SystemRandom().uniform(0.5, 2.0)
-    logger.debug('Sleeping %.2fs before fetching %s', sleep_s, code)
+    logger.info('Sleeping %.2fs before fetching %s', sleep_s, code)
     time.sleep(sleep_s)
 
     symbol = _ticker_symbol(code)
-    logger.info('Fetching stock data for %s', symbol)
+    logger.info('Fetching history for %s (period=%s)', symbol, _HISTORY_PERIOD)
 
     ticker = yf.Ticker(symbol)
     hist = ticker.history(period=_HISTORY_PERIOD, timeout=_REQUEST_TIMEOUT)
+    logger.info('History fetched for %s: %d rows', symbol, len(hist))
 
     if hist.empty:
         raise StockNotFoundError(f'No data found for symbol {code!r}')
 
+    logger.info('Fetching ticker.info for %s', symbol)
     info = ticker.info
     chinese_name: str = info.get('longName') or info.get('shortName') or code
+    logger.info('ticker.info done for %s — name=%s', symbol, chinese_name)
     return _build_stock_data(code, hist, chinese_name)
 
 

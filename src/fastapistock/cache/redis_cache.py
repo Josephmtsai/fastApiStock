@@ -34,6 +34,8 @@ def _get_client() -> redis.Redis:  # type: ignore[type-arg]
             port=REDIS_PORT,
             password=REDIS_PASSWORD,
             decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
         )
     return _client
 

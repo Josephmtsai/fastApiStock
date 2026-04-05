@@ -45,13 +45,15 @@ def get_stock(code: str) -> StockData:
             symbol yields no data from Yahoo Finance.
     """
     key = _cache_key(code)
+    logger.info('Cache lookup: key=%s', key)
     cached = redis_cache.get(key)
     if cached is not None:
-        logger.debug('Cache hit for %s', code)
+        logger.info('Cache hit for %s', code)
         return StockData.model_validate(cached)
 
-    logger.info('Cache miss for %s – fetching from yfinance', code)
+    logger.info('Cache miss for %s — fetching from yfinance', code)
     stock = fetch_stock(code)
+    logger.info('Fetch complete for %s — storing in cache (ttl=%ds)', code, _CACHE_TTL)
     redis_cache.put(key, stock.model_dump(), _CACHE_TTL)
     return stock
 
