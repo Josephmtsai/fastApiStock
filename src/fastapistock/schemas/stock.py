@@ -8,6 +8,7 @@ class StockData(BaseModel):
 
     Attributes:
         Name: Taiwan stock code (e.g. '0050', '2330').
+        ChineseName: Chinese display name of the stock (e.g. '元大台灣50').
         price: Latest closing price in TWD.
         ma20: 20-day (monthly) moving average of close prices.
         ma60: 60-day (quarterly) moving average of close prices.
@@ -16,6 +17,7 @@ class StockData(BaseModel):
     """
 
     Name: str
+    ChineseName: str = ''
     price: float
     ma20: float
     ma60: float

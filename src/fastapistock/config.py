@@ -9,6 +9,7 @@ load_dotenv()
 REDIS_HOST: str = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT: int = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_PASSWORD: str | None = os.getenv('REDIS_PASSWORD') or None
+TELEGRAM_TOKEN: str = os.getenv('TELEGRAM_TOKEN', '')
 
 
 def redis_url() -> str:

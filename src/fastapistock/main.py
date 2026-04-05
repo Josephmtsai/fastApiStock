@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from fastapistock.exceptions import register_exception_handlers
 from fastapistock.rate_limit import limiter
-from fastapistock.routers import health, stocks
+from fastapistock.routers import health, stocks, telegram
 
 
 def create_app() -> FastAPI:
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
 
     application.include_router(health.router)
     application.include_router(stocks.router)
+    application.include_router(telegram.router)
 
     return application
 

@@ -46,7 +46,13 @@
       "Bash(taskkill //F //PID 28996)",
       "Bash(taskkill //F //PID 4336)",
       "Bash(taskkill //F //PID 8240)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(python3 -c \"import sys,json; d=sys.stdin.read\\(\\); print\\(d[:500]\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(p\\) for p in d['paths']]\")",
+      "Bash(pkill -f \"uvicorn\")",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(PORT=8003 uv run uvicorn src.fastapistock.main:app --host 127.0.0.1 --port 8003)"
     ]
   }
 }

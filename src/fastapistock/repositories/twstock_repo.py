@@ -79,18 +79,23 @@ def fetch_stock(code: str) -> StockData:
     if hist.empty:
         raise StockNotFoundError(f'No data found for symbol {code!r}')
 
-    return _build_stock_data(code, hist)
+    info = ticker.info
+    chinese_name: str = info.get('longName') or info.get('shortName') or code
+    return _build_stock_data(code, hist, chinese_name)
 
 
-def _build_stock_data(code: str, hist: pd.DataFrame) -> StockData:
+def _build_stock_data(
+    code: str, hist: pd.DataFrame, chinese_name: str = ''
+) -> StockData:
     """Convert a yfinance history DataFrame into a StockData model.
 
     Args:
         code: Original Taiwan stock code used as the display name.
         hist: DataFrame with columns Close and Volume, indexed by date.
+        chinese_name: Chinese display name fetched from ticker.info.
 
     Returns:
-        StockData with price, MA20, MA60, LastDayPrice, and Volume.
+        StockData with price, MA20, MA60, LastDayPrice, Volume, and ChineseName.
     """
     close = hist['Close']
     last_price = float(close.iloc[-1])
@@ -107,6 +112,7 @@ def _build_stock_data(code: str, hist: pd.DataFrame) -> StockData:
 
     return StockData(
         Name=code,
+        ChineseName=chinese_name,
         price=round(last_price, 2),
         ma20=round(ma20, 2),
         ma60=round(ma60, 2),
