@@ -23,7 +23,30 @@
       "Bash(/c/Users/Joseph/anaconda3/Scripts/uv.exe add:*)",
       "Bash(/c/Users/Joseph/anaconda3/Scripts/uv.exe run:*)",
       "Bash(powershell.exe -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/api/v1/stock/0050)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('status:', d['status']\\); print\\('price:', d['data'][0]['price'] if d['data'] else 'N/A'\\)\")",
+      "Bash(pkill -f \"uvicorn fastapistock.main:app\")",
+      "Bash(ls /d/claude/fastApiStock/.venv/Lib/site-packages/fastapistock*)",
+      "Bash(curl -s http://localhost:8000/health/redis)",
+      "Bash(curl -s http://localhost:8000/openapi.json)",
+      "Bash(python -c \" import sys, json spec = json.load\\(sys.stdin\\) print\\('Routes:', list\\(spec['paths'].keys\\(\\)\\)\\) \")",
+      "Bash(pkill -f uvicorn)",
+      "Bash(pkill -f \"fastapistock\")",
+      "Bash(find /d/claude/fastApiStock/src -name \"*.pyc\" -delete)",
+      "Bash(find /d/claude/fastApiStock/src -name \"__pycache__\" -type d -exec rm -rf {} +)",
+      "Bash(curl -s http://localhost:8000/docs)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /F /PID 2024 /PID 28996 /PID 4336 /PID 8240)",
+      "Bash(taskkill //F //PID 2024)",
+      "Bash(taskkill //F //PID 28996)",
+      "Bash(taskkill //F //PID 4336)",
+      "Bash(taskkill //F //PID 8240)",
+      "Bash(curl:*)"
     ]
   }
 }
