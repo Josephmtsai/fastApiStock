@@ -56,7 +56,6 @@ def create_app() -> FastAPI:
     application.include_router(stocks.router)
     application.include_router(telegram.router)
 
-    _logger.info('App created — routers: health, stocks, telegram')
     return application
 
 
