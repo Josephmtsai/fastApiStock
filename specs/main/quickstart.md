@@ -1,6 +1,6 @@
 # Quickstart: fastApiStock
 
-**Date**: 2026-04-03
+**Date**: 2026-04-06
 
 ## Prerequisites
 
@@ -21,8 +21,8 @@ uv sync
 cp .env.example .env
 # Edit .env: set TW_STOCK_API_BASE_URL and other vars
 
-# 4. Start the development server
-uv run uvicorn src.main:app --reload
+# 4. Start the development server (from repo root)
+uv run uvicorn src.fastapistock.main:app --reload
 ```
 
 ## Validation
@@ -32,11 +32,14 @@ uv run uvicorn src.main:app --reload
 curl http://localhost:8000/health
 # → {"status":"success","data":{"status":"ok"},"message":""}
 
-# Stock quote (Taiwan Semiconductor)
-curl http://localhost:8000/stocks/2330
+# API index (lists routes)
+curl http://localhost:8000/
 
-# Historical data (last 7 days)
-curl "http://localhost:8000/stocks/2330/history?limit=7"
+# Stock quotes (comma-separated codes)
+curl http://localhost:8000/api/v1/stock/2330,0050
+
+# Telegram push (example — requires bot configuration)
+curl "http://localhost:8000/api/v1/tgMessage/12345?stock=2330"
 ```
 
 ## Run Tests
@@ -62,15 +65,15 @@ uv run pre-commit run --all-files
 
 ## Project Layout Quick Reference
 
-```
-src/
-├── main.py          → app factory + router registration
-├── config.py        → Settings from .env
-├── dependencies.py  → shared Depends()
-├── exceptions.py    → exception handlers
-├── routers/         → APIRouter modules (one per domain)
-├── schemas/         → Pydantic models (request/response)
-├── services/        → business logic
-├── repositories/    → external API calls (timeout + delay)
-└── cache/           → local file cache
+```text
+src/fastapistock/
+├── main.py              → app factory + middleware + routers
+├── config.py            → Settings from .env
+├── exceptions.py        → exception handlers
+├── routers/             → APIRouter per domain
+├── schemas/             → Pydantic models
+├── services/            → business orchestration
+├── repositories/        → external I/O (timeouts, delays)
+├── cache/               → Redis cache (redis-py)
+└── middleware/          → rate limit, structured logging (REQ/RES/PERF)
 ```
