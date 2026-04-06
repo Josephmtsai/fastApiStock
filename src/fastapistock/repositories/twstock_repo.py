@@ -66,7 +66,7 @@ def fetch_stock(code: str) -> StockData:
     Raises:
         StockNotFoundError: If yfinance returns an empty history for *code*.
     """
-    sleep_s = SystemRandom().uniform(0.5, 2.0)
+    sleep_s = SystemRandom().uniform(0.1, 0.5)
     logger.info('Sleeping %.2fs before fetching %s', sleep_s, code)
     time.sleep(sleep_s)
 

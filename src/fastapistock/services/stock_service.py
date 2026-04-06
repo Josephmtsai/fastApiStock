@@ -5,6 +5,7 @@ No HTTP imports belong here; all external I/O goes through repositories.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
 from fastapistock.cache import redis_cache
@@ -14,6 +15,7 @@ from fastapistock.schemas.stock import StockData
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 5  # 5 seconds
+_MAX_WORKERS = 5  # parallel yfinance fetches for multi-stock requests
 
 
 def _cache_key(code: str) -> str:
@@ -59,10 +61,10 @@ def get_stock(code: str) -> StockData:
 
 
 def get_stocks(codes: list[str]) -> list[StockData]:
-    """Return snapshots for a list of Taiwan stock codes.
+    """Return snapshots for a list of Taiwan stock codes in parallel.
 
-    Each code is resolved independently; errors for individual symbols
-    are logged and re-raised so the caller decides how to handle them.
+    Cache-hit codes are resolved immediately; only cache-miss codes are
+    forwarded to the thread pool for concurrent yfinance fetches.
 
     Args:
         codes: Non-empty list of Taiwan stock codes.
@@ -73,8 +75,29 @@ def get_stocks(codes: list[str]) -> list[StockData]:
     Raises:
         StockNotFoundError: If any symbol in *codes* is not found.
     """
-    results: list[StockData] = []
-    for code in codes:
-        stock = get_stock(code.strip())
-        results.append(stock)
-    return results
+    cleaned = [c.strip() for c in codes]
+
+    # Resolve cache hits synchronously to avoid thread-pool overhead.
+    results: dict[str, StockData] = {}
+    miss_codes: list[str] = []
+    for code in cleaned:
+        key = _cache_key(code)
+        cached = redis_cache.get(key)
+        if cached is not None:
+            logger.info('Cache hit for %s', code)
+            results[code] = StockData.model_validate(cached)
+        else:
+            miss_codes.append(code)
+
+    # Fetch all cache misses in parallel.
+    if miss_codes:
+        logger.info(
+            'Parallel fetch for %d cache-miss stocks: %s', len(miss_codes), miss_codes
+        )
+        with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(miss_codes))) as pool:
+            future_to_code = {pool.submit(get_stock, code): code for code in miss_codes}
+            for future in as_completed(future_to_code):
+                code = future_to_code[future]
+                results[code] = future.result()  # re-raises StockNotFoundError if any
+
+    return [results[code] for code in cleaned]
