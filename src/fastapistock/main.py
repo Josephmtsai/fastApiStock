@@ -14,8 +14,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from fastapistock.exceptions import register_exception_handlers
+from fastapistock.middleware.logging import LoggingMiddleware
 from fastapistock.middleware.rate_limit import get_limiter
-from fastapistock.routers import health, stocks, telegram
+from fastapistock.routers import health, index, stocks, telegram
 
 _LOGGING_CONFIG = {
     'version': 1,
@@ -91,10 +92,13 @@ def create_app() -> FastAPI:
     """
     application = FastAPI(title='FastAPI Stock', version='0.1.0')
 
+    # Middleware order: outermost first (LoggingMiddleware wraps everything).
+    application.add_middleware(LoggingMiddleware)
     application.add_middleware(_RateLimitMiddleware)
 
     register_exception_handlers(application)
 
+    application.include_router(index.router)
     application.include_router(health.router)
     application.include_router(stocks.router)
     application.include_router(telegram.router)
