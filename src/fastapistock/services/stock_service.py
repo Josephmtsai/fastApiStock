@@ -13,7 +13,7 @@ from fastapistock.schemas.stock import StockData
 
 logger = logging.getLogger(__name__)
 
-_CACHE_TTL = 300  # 5 minutes
+_CACHE_TTL = 5  # 5 seconds
 
 
 def _cache_key(code: str) -> str:

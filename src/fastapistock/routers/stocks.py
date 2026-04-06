@@ -1,14 +1,13 @@
 """Router for Taiwan stock data endpoints.
 
-All routes live under /api/v1/stock and are rate-limited at the
-router level in accordance with Constitution Principle III.
+All routes live under /api/v1/stock.  Rate limiting is applied globally
+by the middleware layer in main.py, not per-route.
 """
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
-from fastapistock.rate_limit import limiter
 from fastapistock.schemas.common import ResponseEnvelope
 from fastapistock.schemas.stock import StockData
 from fastapistock.services.stock_service import get_stocks
@@ -23,15 +22,10 @@ router = APIRouter(prefix='/api/v1/stock', tags=['stocks'])
     response_model=ResponseEnvelope[list[StockData]],
     summary='Get quotes for one or more Taiwan stocks',
 )
-@limiter.limit('60/minute')
-async def get_stock_quotes(
-    request: Request,
-    id: str,
-) -> ResponseEnvelope[list[StockData]]:
+async def get_stock_quotes(id: str) -> ResponseEnvelope[list[StockData]]:
     """Return price snapshots for comma-separated Taiwan stock codes.
 
     Args:
-        request: FastAPI request object (required by slowapi rate limiter).
         id: One or more Taiwan stock codes joined by commas,
             e.g. '0050,2330,2317'.
 

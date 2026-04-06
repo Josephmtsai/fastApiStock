@@ -1,14 +1,13 @@
 """Router for Telegram notification endpoints.
 
-All routes live under /api/v1/tgMessage and are rate-limited
-in accordance with Constitution Principle III.
+All routes live under /api/v1/tgMessage.  Rate limiting is applied
+globally by the middleware layer in main.py, not per-route.
 """
 
 import logging
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query
 
-from fastapistock.rate_limit import limiter
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.common import ResponseEnvelope
 from fastapistock.services.stock_service import get_stocks
@@ -24,9 +23,7 @@ router = APIRouter(prefix='/api/v1/tgMessage', tags=['telegram'])
     response_model=ResponseEnvelope[None],
     summary='Push stock info to a Telegram user',
 )
-@limiter.limit('30/minute')
 async def send_telegram_stock_info(
-    request: Request,
     id: str,
     stock: str = Query(default='', description='Comma-separated Taiwan stock codes'),
 ) -> ResponseEnvelope[None]:
@@ -36,7 +33,6 @@ async def send_telegram_stock_info(
     If no valid codes remain or no data is found, the message is not sent.
 
     Args:
-        request: FastAPI request object (required by slowapi rate limiter).
         id: Telegram user/chat ID to push the message to.
         stock: Comma-separated Taiwan stock codes (e.g. '0050,2330').
             Non-numeric tokens are ignored.

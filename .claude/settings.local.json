@@ -53,7 +53,9 @@
       "Bash(pkill -f \"uvicorn\")",
       "Bash(taskkill //F //IM python.exe)",
       "Bash(PORT=8003 uv run uvicorn src.fastapistock.main:app --host 127.0.0.1 --port 8003)",
-      "Bash(RATE_LIMIT_STORAGE_URI=memory:// uv run:*)"
+      "Bash(RATE_LIMIT_STORAGE_URI=memory:// uv run:*)",
+      "Bash(python -c \"import slowapi\")",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

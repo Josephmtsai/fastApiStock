@@ -6,13 +6,15 @@ middleware and exception handlers. Zero business logic lives here.
 
 import logging
 import logging.config
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 from fastapistock.exceptions import register_exception_handlers
-from fastapistock.rate_limit import limiter
+from fastapistock.middleware.rate_limit import get_limiter
 from fastapistock.routers import health, stocks, telegram
 
 _LOGGING_CONFIG = {
@@ -38,6 +40,48 @@ _LOGGING_CONFIG = {
 logging.config.dictConfig(_LOGGING_CONFIG)
 _logger = logging.getLogger(__name__)
 
+_RATE_LIMIT_EXEMPT = {'/health'}
+
+
+class _RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
+    """Middleware that applies per-route sliding-window rate limiting.
+
+    Routes in ``_RATE_LIMIT_EXEMPT`` are skipped.  All others are
+    matched to the most-specific ``RateLimiter`` via ``get_limiter()``.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        """Intercept each request and enforce the rate limit.
+
+        Args:
+            request: Incoming HTTP request.
+            call_next: Next middleware or route handler.
+
+        Returns:
+            429 JSONResponse if rate-limited, otherwise the normal response.
+        """
+        if request.url.path not in _RATE_LIMIT_EXEMPT:
+            ip = request.client.host if request.client else 'unknown'
+            limiter = get_limiter(request.url.path)
+            if limiter.is_rate_limited(ip):
+                cfg = limiter._config
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        'status': 'error',
+                        'data': None,
+                        'message': (
+                            f'Too many requests. '
+                            f'Blocked for {cfg.block_seconds} seconds.'
+                        ),
+                    },
+                )
+        return await call_next(request)
+
 
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application.
@@ -47,8 +91,7 @@ def create_app() -> FastAPI:
     """
     application = FastAPI(title='FastAPI Stock', version='0.1.0')
 
-    application.state.limiter = limiter
-    application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+    application.add_middleware(_RateLimitMiddleware)
 
     register_exception_handlers(application)
 
