@@ -31,6 +31,8 @@ class RichStockData(BaseModel):
         volume_avg20: 20 日平均成交量。
         week52_high: 近 6 個月最高價（作為 52 週區間的代理指標）。
         week52_low: 近 6 個月最低價。
+        premarket_price: 美股盤前價格（來自 yfinance info.preMarketPrice）；
+            台股或非盤前時段為 None。
     """
 
     symbol: str
@@ -53,6 +55,7 @@ class RichStockData(BaseModel):
     volume_avg20: int
     week52_high: float | None = None
     week52_low: float | None = None
+    premarket_price: float | None = None
 ```
 
 > **現有 `StockData` 不受影響**，API endpoint 繼續使用原本的 schema。

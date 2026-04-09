@@ -1,167 +1,104 @@
-# Implementation Plan: FastAPI Project Folder Structure
+# Implementation Plan: [FEATURE]
 
-**Branch**: `main` | **Date**: 2026-04-06 | **Spec**: `specs/main/spec.md`
-**Input**: Feature specification from `specs/main/spec.md`
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-Establish the canonical folder layout for `fastApiStock` — a Taiwan stock data REST API built with
-FastAPI. The structure isolates routing, schema, business logic, data-fetch, **middleware**
-(cross-cutting), and **Redis-backed** cache/rate-limit infrastructure under the installable package
-`fastapistock`, following PEP 517 src layout, FastAPI community practice, and the project
-constitution (Principles I–V).
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: Python 3.11 (`.python-version`)
-**Primary Dependencies**: FastAPI 0.135+, Uvicorn, httpx, python-dotenv, Pydantic v2, **redis-py**
-**Storage**: **Redis** (cache + rate limit state); no relational DB in v1
-**Testing**: pytest + pytest-cov + httpx (async test client); fakeredis where integration tests need
-Redis without a live server
-**Target Platform**: Linux server (Docker-compatible)
-**Project Type**: web-service (JSON REST API)
-**Performance Goals**: ≤ 200 ms p95 for cached endpoints; ≤ 2 s for live-fetch endpoints (constitution
-IV); reuse connection pools for HTTP/Redis on hot paths (spec P-002, P-005)
-**Constraints**: External TW stock APIs require random delay 0.5–2 s between calls; explicit
-`timeout` on all outgoing requests; Redis rate limiting; graceful degradation if Redis is down
-(constitution IV); structured REQ/RES/PERF logging (constitution V)
-**Scale/Scope**: Single-developer project; small route surface; designed to add domains without
-touching unrelated modules
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
+
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principle | Gate | Status |
-|-----------|------|--------|
-| **I. Code Quality** | Typed public API, docstrings, ruff + mypy, config externalised | ✅ FR-005, FR-011 |
-| **II. Testing Standards** | `tests/unit/` + `tests/integration/`; 80%+ coverage | ✅ Spec SC-002 |
-| **III. API Consistency** | `APIRouter` only; envelope in `schemas/common.py`; Redis rate limit | ✅ FR-001, FR-007, FR-008 |
-| **IV. Performance & Resilience** | Timeouts + delay in repos; **Redis-only** cache; no parallel file cache; fallback | ✅ FR-009, FR-011 |
-| **V. Observability** | Single middleware: REQ / RES / PERF log format | ✅ FR-010 |
-
-**Result**: PASS when implementation matches spec + constitution. Re-run this gate after any
-structural change.
+[Gates determined based on constitution file]
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/main/
-├── plan.md          # This file
-├── spec.md          # Feature specification
-├── research.md      # Phase 0 output
-├── data-model.md    # Phase 1 output
-├── quickstart.md    # Phase 1 output
-└── contracts/       # Phase 1 output
+specs/[###-feature]/
+├── plan.md              # This file (/speckit.plan command output)
+├── research.md          # Phase 0 output (/speckit.plan command)
+├── data-model.md        # Phase 1 output (/speckit.plan command)
+├── quickstart.md        # Phase 1 output (/speckit.plan command)
+├── contracts/           # Phase 1 output (/speckit.plan command)
+└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
 ```
 
 ### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
-fastApiStock/
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
 ├── src/
-│   └── fastapistock/           # Installable package (PEP 517)
-│       ├── main.py             # create_app(), middleware order, include_router()
-│       ├── config.py           # Settings from env
-│       ├── exceptions.py       # Exception handlers registration
-│       ├── routers/            # One APIRouter per domain
-│       │   ├── health.py       # GET /health
-│       │   ├── stocks.py       # GET /api/v1/stock/{id}
-│       │   ├── telegram.py     # GET /api/v1/tgMessage/{id}
-│       │   └── index.py        # GET / — API index (optional)
-│       ├── schemas/
-│       │   ├── common.py       # ResponseEnvelope[T]
-│       │   └── stock.py        # StockData, …
-│       ├── services/           # Business orchestration
-│       ├── repositories/       # External I/O (yfinance, HTTP, …)
-│       ├── cache/              # Redis cache helper (redis-py only)
-│       └── middleware/
-│           ├── logging.py      # REQ / RES / PERF (constitution V)
-│           └── rate_limit/     # Redis sliding window + block
-│
-├── tests/
-│   ├── conftest.py
-│   ├── unit/
-│   └── integration/
-│
-├── .env.example
-├── pyproject.toml
-├── uv.lock
-└── .python-version
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: **Src layout** with package name `fastapistock`. Cross-cutting HTTP concerns
-live in `middleware/`; domain code stays in `routers/`, `services/`, `repositories/`. Tests live under
-`tests/` and mirror behaviour, not necessarily every subfolder name.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
-> No constitution violations detected — section left intentionally blank.
+> **Fill ONLY if Constitution Check has violations that must be justified**
 
----
-
-## Phase 0: Research
-
-| Unknown | Decision | Rationale |
-|---------|----------|-----------|
-| Cache + rate limit backend | **Redis** (`redis-py`) | Constitution IV; single source of truth; works across Uvicorn workers |
-| Parallel file cache | **Not allowed** | Constitution IV — no second cache layer |
-| Auth | None in v1 | Spec assumptions; abuse handled by rate limiting |
-| Pydantic version | v2 | FastAPI dependency |
-| DB ORM | None in v1 | External APIs + Redis only |
-
-**Output**: Captured above; see `research.md` for any deeper notes.
-
----
-
-## Phase 1: Design & Contracts
-
-### Data Model (`data-model.md`)
-
-Key entities under `src/fastapistock/schemas/`:
-
-| Entity | Location | Purpose |
-|--------|----------|---------|
-| `ResponseEnvelope[T]` | `schemas/common.py` | `{status, data, message}` |
-| `StockData` | `schemas/stock.py` | Quote snapshot for `/api/v1/stock/{id}` |
-| `Settings` | `config.py` | Env-driven configuration |
-
-### Contracts (`contracts/`)
-
-| Route | Method | Response (shape) |
-|-------|--------|------------------|
-| `/` | `GET` | API index (`ResponseEnvelope` list of routes) |
-| `/health` | `GET` | `ResponseEnvelope[{"status": "ok"}]` |
-| `/api/v1/stock/{id}` | `GET` | `ResponseEnvelope[list[StockData]]` |
-| `/api/v1/tgMessage/{id}` | `GET` | `ResponseEnvelope` (Telegram push result) |
-
-Success and error bodies use the same envelope; HTTP status codes follow constitution III.
-
-### Layer Responsibilities
-
-```text
-HTTP Request
-    → Middleware (rate limit → logging REQ)
-    → Router (thin)
-    → Service (orchestration)
-    → Repository (external API + polite delays + timeouts)
-    → Redis cache (read-through / write-through; graceful skip on failure)
-    → Middleware (logging RES + PERF)
-    → HTTP Response
-```
-
-- **Router**: Validate/coerce input, call service, return envelope.
-- **Service**: Orchestrate cache ↔ repository; batch multi-symbol work in one service call where
-  possible (spec P-004).
-- **Repository**: External calls only; enforce timeouts and inter-request delay policy.
-- **Cache**: Redis via `redis-py`; TTL and keys from config/env.
-- **Middleware**: Rate limiting and structured logging — not duplicated in routes.
-
----
-
-## Next Step
-
-Run `/speckit-tasks` against this plan to generate `specs/main/tasks.md` with concrete implementation
-tasks ordered by user story priority.
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

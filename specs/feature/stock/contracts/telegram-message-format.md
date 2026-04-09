@@ -27,10 +27,7 @@
    現價: `{PRICE} TWD`   昨收: `{PREV_CLOSE}`
    漲跌: `{SIGN}{CHANGE}` \({SIGN}{PCT}%\)
    RSI\(14\): `{RSI}` {RSI_TAG}
-   MACD: `{MACD}` 訊: `{SIGNAL}` 柱: `{HIST}` \({CROSS}\)
    均線: `MA20:{MA20}{DIR}  MA50:{MA50}{DIR}`
-   布林: `{BB_L} / {BB_M} / {BB_U}` {BB_TAG}
-   成交量: `{VOL}` \(均量比:{RATIO}x {VOL_TAG}\)
    近期區間: `{W52L} ─── {PRICE} ─── {W52H}` \({POS}%位置\)
    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
    {VERDICT_EMOJI} *{VERDICT}* \(評分 {SCORE}/8\)
@@ -50,6 +47,9 @@ _由 FastAPI Stock Bot 自動產生_
 - Header 改為：`📊 *美股定時推播*`
 - 幣別標示改為：`{PRICE} USD`
 - 昨收標示改為：`前收: \`{PREV_CLOSE}\``（美股用語）
+- 盤前行（僅盤前時段有資料時顯示，台股不顯示）：
+  `盤前: \`{PREMARKET_PRICE} USD\`  \({SIGN}{PCT}%\)`
+  置於漲跌行之後、RSI 行之前
 
 ## 欄位替換說明
 
@@ -65,10 +65,8 @@ _由 FastAPI Stock Bot 自動產生_
 | `{PCT}` | 漲跌幅，保留 2 位小數 | `1.19` |
 | `{RSI}` | RSI 值，保留 1 位小數 | `58.3` |
 | `{RSI_TAG}` | RSI 警示標注 | `⚠️超買` / `⚠️超賣` / 空 |
-| `{CROSS}` | MACD 交叉狀態 | `金叉↑` / `死叉↓` |
 | `{DIR}` | 現價相對均線方向 | `↑` / `↓` |
-| `{BB_TAG}` | 布林警示 | `⚠️觸上軌` / `⚠️觸下軌` / 空 |
-| `{VOL_TAG}` | 量能描述 | `放量↑` / `縮量↓` / `正常` |
+| `{PREMARKET_PRICE}` | 美股盤前價（僅 US，盤前時段） | `196.00` |
 | `{VERDICT_EMOJI}` | 判斷 emoji | `📈` / `📉` / `⚖️` |
 | `{VERDICT}` | 判斷文字 | `看漲` / `看跌` / `中性觀望` |
 

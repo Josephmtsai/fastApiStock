@@ -49,6 +49,10 @@ def fetch_us_stock(symbol: str) -> RichStockData:
 
     info = ticker.info
     display_name: str = info.get('longName') or info.get('shortName') or symbol
+    premarket_raw = info.get('preMarketPrice')
+    premarket_price: float | None = (
+        round(float(premarket_raw), 2) if premarket_raw is not None else None
+    )
 
     close = hist['Close']
     last_price = round(float(close.iloc[-1]), 2)
@@ -78,4 +82,5 @@ def fetch_us_stock(symbol: str) -> RichStockData:
         volume_avg20=result.volume_avg20,
         week52_high=result.week52_high,
         week52_low=result.week52_low,
+        premarket_price=premarket_price,
     )
