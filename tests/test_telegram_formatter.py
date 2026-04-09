@@ -111,6 +111,23 @@ class TestFormatRichStockMessage:
         ratio_str = match.group(1)
         assert '.' not in ratio_str or r'\.' in ratio_str
 
+    def test_negative_score_dash_escaped(self) -> None:
+        # score=-3 → '看跌' verdict, result.score=-3 → must render as r'\-3', not '-3'
+        stock = _make_stock(
+            price=80.0,  # below MA20=95 → bear signal
+            rsi=75.0,    # overbought → bear
+        )
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        import re as _re
+        score_match = _re.search(r'評分 (.*?)/8', msg)
+        assert score_match is not None
+        raw_score = score_match.group(1)
+        # A bare '-' (not preceded by '\') would cause Telegram 400
+        assert not _re.search(r'(?<!\\)-', raw_score), (
+            f'Unescaped dash in score: {raw_score!r}'
+        )
+
     def test_footer_present(self) -> None:
         stock = _make_stock()
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)

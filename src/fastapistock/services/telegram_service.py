@@ -173,9 +173,10 @@ def _format_rich_block(stock: RichStockData) -> str:
         h, l_v = stock.week52_high, stock.week52_low
         if h != l_v:
             pos = (stock.price - l_v) / (h - l_v) * 100
+            pos_esc = _escape_md(f'{pos:.0f}')
             lines.append(
                 f'   近期區間: `{l_v:.2f} ─── {stock.price:.2f}'
-                f' ─── {h:.2f}` \\({pos:.0f}%位置\\)'
+                f' ─── {h:.2f}` \\({pos_esc}%位置\\)'
             )
 
     ind = IndicatorResult(
@@ -201,8 +202,9 @@ def _format_rich_block(stock: RichStockData) -> str:
     else:
         emoji = '⚖️'
     lines.append('   ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄')
+    score_esc = _escape_md(str(result.score))
     lines.append(
-        f'   {emoji} *{_escape_md(result.verdict)}* \\(評分 {result.score}/8\\)'
+        f'   {emoji} *{_escape_md(result.verdict)}* \\(評分 {score_esc}/8\\)'
     )
     for reason in result.bull_reasons:
         lines.append(f'   ✅ {_escape_md(reason)}')
