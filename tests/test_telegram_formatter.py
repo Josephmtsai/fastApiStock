@@ -87,11 +87,13 @@ class TestFormatRichStockMessage:
         msg = format_rich_stock_message([stock], 'TW', now)
         assert 'RSI' not in msg
 
-    def test_change_sign_escaped(self) -> None:
+    def test_positive_change_pct_plus_escaped_outside_backticks(self) -> None:
         stock = _make_stock(price=100.0)
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'TW', now)
-        # positive change should show escaped + or raw + inside code span
+        # Unescaped '+' outside backticks causes Telegram 400 error.
+        # The parenthetical change_pct section must use '\+', not '+'.
+        assert r'\+' in msg  # escaped + in \(+X.XX%\)
         assert '2.00' in msg  # change value present
 
     def test_footer_present(self) -> None:
