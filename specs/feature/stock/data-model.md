@@ -1,185 +1,413 @@
-# 資料模型：美股分析 API + 設定變數抽取
+# Phase 1 Data Model：定時股票推播排程
 
-**第 1 階段產出**
+## 1. Schema：RichStockData
 
----
-
-## 新增 Pydantic Schema（`src/fastapistock/schemas/us_stock.py`）
-
-### TechnicalAnalysis（技術指標）
+位置：`src/fastapistock/schemas/stock.py`（新增於現有 `StockData` 之後）
 
 ```python
-class TechnicalAnalysis(BaseModel):
-    rsi: float | None = None          # RSI(14)
-    macd: float | None = None         # MACD 線
-    macd_signal: float | None = None  # 訊號線
-    macd_hist: float | None = None    # 柱狀圖
-    ma20: float | None = None
-    ma50: float | None = None         # 資料不足 50 筆時為 None
-    ma200: float | None = None        # 資料不足 200 筆時為 None
-    bb_upper: float | None = None     # 布林上軌（20期，2σ）
+from pydantic import BaseModel
+
+class RichStockData(BaseModel):
+    """技術分析完整快照，供排程推播使用。
+
+    Attributes:
+        symbol: 股票代碼（台股如 '0050'，美股如 'AAPL'）。
+        display_name: 顯示名稱（公司名或中文名）。
+        market: 市場別，'TW' 或 'US'。
+        price: 最新價格。
+        prev_close: 前一交易日收盤價。
+        change: 漲跌金額（price - prev_close）。
+        change_pct: 漲跌幅（百分比）。
+        ma20: 20 日移動平均。
+        ma50: 50 日移動平均，歷史不足時為 None。
+        rsi: RSI(14)，歷史不足時為 None。
+        macd: MACD 線值，歷史不足時為 None。
+        macd_signal: MACD 訊號線，歷史不足時為 None。
+        macd_hist: MACD 柱狀值（macd - macd_signal），歷史不足時為 None。
+        bb_upper: 布林通道上軌，歷史不足時為 None。
+        bb_mid: 布林通道中線（MA20），歷史不足時為 None。
+        bb_lower: 布林通道下軌，歷史不足時為 None。
+        volume: 最新交易日成交量。
+        volume_avg20: 20 日平均成交量。
+        week52_high: 近 6 個月最高價（作為 52 週區間的代理指標）。
+        week52_low: 近 6 個月最低價。
+    """
+
+    symbol: str
+    display_name: str
+    market: Literal['TW', 'US']
+    price: float
+    prev_close: float
+    change: float
+    change_pct: float
+    ma20: float
+    ma50: float | None = None
+    rsi: float | None = None
+    macd: float | None = None
+    macd_signal: float | None = None
+    macd_hist: float | None = None
+    bb_upper: float | None = None
     bb_mid: float | None = None
     bb_lower: float | None = None
-    vol_today: int | None = None      # 今日成交量
-    vol_avg20: int | None = None      # 20 日均量
-    w52h: float | None = None         # 52 週高點
-    w52l: float | None = None         # 52 週低點
+    volume: int
+    volume_avg20: int
+    week52_high: float | None = None
+    week52_low: float | None = None
 ```
 
-### SentimentScore（情緒評分）
+> **現有 `StockData` 不受影響**，API endpoint 繼續使用原本的 schema。
+
+---
+
+## 2. Config 新增欄位
+
+位置：`src/fastapistock/config.py`
 
 ```python
-class SentimentScore(BaseModel):
-    score: int                  # −8 到 +8
-    verdict: str                # "看漲" | "中性觀望" | "看跌"
-    summary: str                # 例："強烈看漲 (評分 5/8)"
-    bull_reasons: list[str]     # 看多訊號說明
-    bear_reasons: list[str]     # 看空訊號說明
-```
+# 新增（讀自環境變數）
+TELEGRAM_USER_ID: str = os.getenv('TELEGRAM_USER_ID', '')
 
-### USStockData（美股完整資料）
+def tw_stock_codes() -> list[str]:
+    """解析 TW_STOCKS 環境變數為股票代碼清單。"""
+    raw = os.getenv('TW_STOCKS', '')
+    return [c.strip() for c in raw.split(',') if c.strip()]
 
-```python
-class USStockData(BaseModel):
-    symbol: str
-    price: float
-    prev_close: float | None = None
-    change: float | None = None
-    change_pct: float | None = None
-    market_state: str           # PRE | REGULAR | POST | POSTPOST | CLOSED
-    price_label: str            # "盤前" | "即時" | "盤後" | "收盤"
-    ta: TechnicalAnalysis
-    sentiment: SentimentScore | None = None
+def us_stock_symbols() -> list[str]:
+    """解析 US_STOCKS 環境變數為股票代碼清單。"""
+    raw = os.getenv('US_STOCKS', '')
+    return [s.strip().upper() for s in raw.split(',') if s.strip()]
 ```
 
 ---
 
-## 新增 Pydantic Schema（`src/fastapistock/schemas/ft_monitor.py`）
+## 3. Repository：US Stock
 
-### FTBuySuggestion（買入建議）
+位置：`src/fastapistock/repositories/us_stock_repo.py`
+
+**主要函式簽名**：
 
 ```python
-class FTBuySuggestion(BaseModel):
-    label: str   # 例："立即買入（現價）"
-    price: float
+def fetch_us_stock(symbol: str) -> RichStockData:
+    """抓取單支美股的完整技術分析快照。
+
+    Args:
+        symbol: 美股 ticker（如 'AAPL'、'TSLA'）。
+
+    Returns:
+        填充完整的 RichStockData 實例。
+
+    Raises:
+        StockNotFoundError: yfinance 回傳空資料時拋出。
+    """
 ```
 
-### FTAlert（警示）
+**內部流程**：
+1. random sleep (0.1–0.5 s)
+2. `yf.Ticker(symbol).history(period='6mo', timeout=10)`
+3. 檢查是否為空 → 拋出 `StockNotFoundError`
+4. 取 `fast_info.last_price` 作為現價（fallback 到 `Close.iloc[-1]`）
+5. 呼叫 `indicators.calculate(hist)` 計算技術指標
+6. 回傳 `RichStockData`
 
+---
+
+## 4. Repository：TW Rich Stock（新增）
+
+位置：`src/fastapistock/repositories/twstock_repo.py`（新增函式，不改現有）
+
+新增：
 ```python
-class FTAlert(BaseModel):
-    alert_type: str             # BELOW_AVG_5 | BELOW_AVG_10 | ABOVE_AVG_BUT_DOWN_FROM_HIGH
-    level: str                  # "緊急" | "注意" | "回調機會"
-    message: str
-    buy_suggestions: list[FTBuySuggestion]
+def fetch_tw_rich_stock(code: str) -> RichStockData:
+    """抓取單支台股的完整技術分析快照（供排程使用）。"""
 ```
 
-### FTHolding（持倉）
+> 現有 `fetch_stock()` 回傳 `StockData`，保持不動。
+> 新函式回傳 `RichStockData`，共用底層 yfinance 呼叫邏輯。
+
+---
+
+## 5. Service：Indicators
+
+位置：`src/fastapistock/services/indicators.py`
+
+所有技術指標計算集中於此，純函數設計（接收 DataFrame，回傳 dict）：
 
 ```python
-class FTHolding(BaseModel):
-    symbol: str
-    avg_cost: float
-    shares: float
-    highest: float | None = None        # 試算表記錄的最高買入價
-    current_price: float | None = None
-    diff_from_avg_pct: float | None = None
+from dataclasses import dataclass
+import pandas as pd
+
+@dataclass(frozen=True)
+class IndicatorResult:
+    """技術指標計算結果。"""
+    rsi: float | None
+    macd: float | None
+    macd_signal: float | None
+    macd_hist: float | None
+    ma20: float | None
+    ma50: float | None
+    bb_upper: float | None
+    bb_mid: float | None
+    bb_lower: float | None
+    volume_avg20: int
+    week52_high: float | None
+    week52_low: float | None
+
+def calculate(hist: pd.DataFrame) -> IndicatorResult:
+    """從 yfinance history DataFrame 計算所有技術指標。
+
+    Args:
+        hist: yfinance history DataFrame（含 Close, Volume, High, Low 欄位）。
+
+    Returns:
+        IndicatorResult，歷史不足時相關欄位為 None。
+    """
 ```
 
-### QuarterlyProgress（季度進度）
+**評分函式**：
 
 ```python
-class QuarterlyProgress(BaseModel):
-    symbol: str
-    target: float
-    actual: float
-    achieve_rate: float         # 0.0 – 1.0
-    achieved: bool
-    remaining_days: int
+@dataclass(frozen=True)
+class ScoreResult:
+    score: int            # -8 ~ +8
+    verdict: str          # '看漲' | '看跌' | '中性觀望'
+    bull_reasons: list[str]
+    bear_reasons: list[str]
+
+def score_stock(price: float, change_pct: float, indicators: IndicatorResult) -> ScoreResult:
+    """根據技術指標計算綜合評分與判斷。"""
 ```
 
-### QuarterlySummary（季度摘要）
+評分規則：
+
+| 指標 | 看漲 | 看跌 |
+|------|------|------|
+| RSI < 30 | +2 | — |
+| RSI 30–40 | +1 | — |
+| RSI > 70 | — | -2 |
+| RSI 60–70 | — | -1 |
+| MACD hist > 0 且 MACD > 0 | +2 | — |
+| MACD hist > 0 | +1 | — |
+| MACD hist < 0 且 MACD < 0 | — | -2 |
+| MACD hist < 0 | — | -1 |
+| 現價 > MA20 | +1 | — |
+| 現價 < MA20 | — | -1 |
+| 現價 > MA50 | +1 | — |
+| 現價 < MA50 | — | -1 |
+| BB 位置 < 15% | +1 | — |
+| BB 位置 > 85% | — | -1 |
+| 放量上漲 (>1.5x) | +1 | — |
+| 放量下跌 (>1.5x) | — | -1 |
+
+判斷：score ≥ +3 → 看漲，≤ -3 → 看跌，其餘 → 中性觀望
+
+---
+
+## 6. Service：Scheduler Push
+
+位置：`src/fastapistock/services/scheduler_push.py`
 
 ```python
-class QuarterlySummary(BaseModel):
-    period_start: str           # ISO 日期字串
-    period_end: str
-    total_days: int
-    elapsed_days: int
-    time_progress_pct: float
-    items: list[QuarterlyProgress]
-    overall_actual: float
-    overall_target: float
-    overall_pct: float
-```
+async def push_tw_stocks() -> None:
+    """抓取台股資料並推播到 Telegram。"""
 
-### FTMonitorResult（ft-monitor 回應主體）
-
-```python
-class FTMonitorResult(BaseModel):
-    holdings: list[FTHolding]
-    alerts: dict[str, list[FTAlert]]    # symbol → 警示清單
-    quarterly_summary: QuarterlySummary | None = None
+async def push_us_stocks() -> None:
+    """抓取美股資料並推播到 Telegram。"""
 ```
 
 ---
 
-## `config.py` 新增設定
+## 7. Service：Rich Telegram Formatter
+
+位置：`src/fastapistock/services/telegram_service.py`（新增函式）
 
 ```python
-# Telegram（補充）
-TELEGRAM_CHAT_ID: str = os.getenv('TELEGRAM_CHAT_ID', '')      # 原本硬編碼在 sample/
+def format_rich_stock_message(
+    stocks: list[RichStockData],
+    market: Literal['TW', 'US'],
+    now: datetime,
+) -> str:
+    """建立包含技術指標的 Telegram MarkdownV2 訊息。
 
-# 美股
-US_STOCK_SYMBOLS: list[str] = _csv_list('US_STOCK_SYMBOLS', 'VOO,QQQ,NVDA,TSM')
-US_STOCK_CACHE_TTL: int = int(os.getenv('US_STOCK_CACHE_TTL', '60'))
+    Args:
+        stocks: 股票清單。
+        market: 市場別，決定 header 和幣別標示。
+        now: 推播時間（Asia/Taipei）。
 
-# 台股快取（抽取原本的魔法數字）
-TW_STOCK_CACHE_TTL: int = int(os.getenv('TW_STOCK_CACHE_TTL', '5'))
+    Returns:
+        MarkdownV2 格式的訊息字串。
+    """
 
-# FT Monitor
-GOOGLE_SHEET_ID: str = os.getenv('GOOGLE_SHEET_ID', '')
-GOOGLE_SHEET_FT_GID: str = os.getenv('GOOGLE_SHEET_FT_GID', '')
-GOOGLE_SHEET_QUARTERLY_GID: str = os.getenv('GOOGLE_SHEET_QUARTERLY_GID', '')
-FT_WATCH_SYMBOLS: list[str] = _csv_list('FT_WATCH_SYMBOLS', 'TSM,NVDA,QQQ,VOO')
-GS_CACHE_TTL: int = int(os.getenv('GS_CACHE_TTL', '300'))
-FT_ALERT_BELOW_PCT_WARN: float = float(os.getenv('FT_ALERT_BELOW_PCT_WARN', '5'))
-FT_ALERT_BELOW_PCT_CRITICAL: float = float(os.getenv('FT_ALERT_BELOW_PCT_CRITICAL', '10'))
-FT_ALERT_DROP_FROM_HIGH_PCT: float = float(os.getenv('FT_ALERT_DROP_FROM_HIGH_PCT', '20'))
-
-# 輔助函式（私有）
-def _csv_list(key: str, default: str) -> list[str]:
-    return [v.strip() for v in os.getenv(key, default).split(',') if v.strip()]
+def send_rich_stock_message(user_id: str, stocks: list[RichStockData], market: Literal['TW', 'US']) -> bool:
+    """送出技術分析格式的 Telegram 訊息。"""
 ```
 
 ---
 
-## 新增 Repository 結構
+## 8. Router：台股手動推播（升級現有）
 
-```
-repositories/
-├── twstock_repo.py          （現有，不變）
-├── us_stock_repo.py         新增 — Yahoo v7/v8 HTTP + crumb session singleton
-└── google_sheets_repo.py    新增 — 抓取 FT Summary 與 Quarterly CSV
+位置：`src/fastapistock/routers/telegram.py`（修改現有 router）
+
+現有 `send_telegram_stock_info()` 改為呼叫 `get_rich_tw_stocks()` 並使用
+`send_rich_stock_message()`，API 介面（path、query params、response envelope）不變。
+
+```python
+@router.get('/{id}', response_model=ResponseEnvelope[None])
+async def send_telegram_stock_info(
+    id: str,
+    stock: str = Query(default='', description='Comma-separated Taiwan stock codes'),
+) -> ResponseEnvelope[None]:
+    """Fetch rich TW stock data and push MarkdownV2 message to a Telegram user."""
+    # codes 過濾邏輯不變（isdigit()）
+    # 改呼叫 get_rich_tw_stocks(codes)
+    # 改呼叫 send_rich_stock_message(id, stocks, market='TW')
 ```
 
-## 新增 Service 結構
+## 9. Router：美股手動推播（新增）
 
+位置：`src/fastapistock/routers/us_telegram.py`（新建）
+
+```python
+router = APIRouter(prefix='/api/v1/usMessage', tags=['us-telegram'])
+
+@router.get(
+    '/{id}',
+    response_model=ResponseEnvelope[None],
+    summary='Push US stock info to a Telegram user',
+)
+async def send_us_telegram_stock_info(
+    id: str,
+    stock: str = Query(default='', description='Comma-separated US stock tickers'),
+) -> ResponseEnvelope[None]:
+    """Fetch rich US stock data and push MarkdownV2 message to a Telegram user.
+
+    Non-alpha stock tickers in *stock* are silently ignored.
+    Tickers are uppercased automatically.
+
+    Args:
+        id: Telegram user/chat ID to push the message to.
+        stock: Comma-separated US stock tickers (e.g. 'AAPL,TSLA').
+
+    Returns:
+        ResponseEnvelope with status 'success' when the message is sent,
+        or 'error' with a descriptive message otherwise.
+    """
+    # 解析 ticker，去空白，轉大寫，過濾非字母
+    symbols = [s.strip().upper() for s in stock.split(',')
+               if s.strip() and s.strip().isalpha()]
+    if not symbols:
+        return ResponseEnvelope(status='error', message='No valid stock tickers provided')
+    ...
 ```
-services/
-├── stock_service.py         修改 — 改用 TW_STOCK_CACHE_TTL from config
-├── technical_analysis.py    新增 — calc_rsi, calc_macd, calc_bollinger, calc_ta, sentiment_score
-├── us_stock_service.py      新增 — get_us_stock(), get_us_stocks() + Redis 快取
-└── ft_monitor_service.py    新增 — 整合 Google Sheets + 美股報價 + 警示邏輯
+
+## 10. Service：Rich TW Stocks（新增）
+
+位置：`src/fastapistock/services/stock_service.py`（新增函式，現有不動）
+
+```python
+def get_rich_tw_stock(code: str) -> RichStockData:
+    """Cache-first lookup for a single TW stock with full indicators."""
+
+def get_rich_tw_stocks(codes: list[str]) -> list[RichStockData]:
+    """Parallel cache-first fetch for multiple TW stocks with full indicators."""
+```
+
+Cache key 格式：`rich_tw:{code}:{date}` 與現有 `stock:{code}:{date}` 不衝突。
+
+## 11. Service：US Stocks（新增）
+
+位置：`src/fastapistock/services/us_stock_service.py`（新建）
+
+```python
+def get_us_stock(symbol: str) -> RichStockData:
+    """Cache-first lookup for a single US stock with full indicators."""
+
+def get_us_stocks(symbols: list[str]) -> list[RichStockData]:
+    """Parallel cache-first fetch for multiple US stocks with full indicators."""
+```
+
+Cache key 格式：`us_stock:{symbol}:{date}`
+
+> **`get_us_stocks` 與 `get_rich_tw_stocks` 被排程器和 API endpoint 共同呼叫**，
+> 這是唯一實作，不重複。
+
+## 12. Scheduler 模組
+
+位置：`src/fastapistock/scheduler.py`
+
+```python
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from zoneinfo import ZoneInfo
+
+_TZ = ZoneInfo('Asia/Taipei')
+
+def is_tw_market_window(now: datetime) -> bool:
+    """判斷現在是否在台股推播時間窗口。"""
+
+def is_us_market_window(now: datetime) -> bool:
+    """判斷現在是否在美股推播時間窗口。"""
+
+async def _scheduled_push() -> None:
+    """每 30 分鐘觸發，依時間窗口決定推送台股或美股。"""
+
+def build_scheduler() -> AsyncIOScheduler:
+    """建立並設定 APScheduler，回傳已設定但未啟動的 scheduler。"""
 ```
 
 ---
 
-## Redis 快取 Key 設計
+## 9. Main Lifespan 修改
 
-| Key 格式 | TTL | 內容 |
-|---------|-----|------|
-| `us-stock:{SYMBOL}:{date}` | `US_STOCK_CACHE_TTL`（60s） | 序列化的 `USStockData` |
-| `ft-monitor:holdings:{date}` | `GS_CACHE_TTL`（300s） | Google Sheets FT Summary 解析結果 |
-| `ft-monitor:quarterly:{date}` | `GS_CACHE_TTL`（300s） | Google Sheets Quarterly 解析結果 |
-| `stock:{CODE}:{date}` | `TW_STOCK_CACHE_TTL`（5s） | 台股快取（現有，key 格式不變） |
+位置：`src/fastapistock/main.py`
+
+```python
+from contextlib import asynccontextmanager
+from fastapistock.scheduler import build_scheduler
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = build_scheduler()
+    scheduler.start()
+    logger.info('APScheduler started')
+    yield
+    scheduler.shutdown(wait=False)
+    logger.info('APScheduler stopped')
+
+# create_app() 加入 lifespan=lifespan
+```
+
+---
+
+## 13. 狀態流程圖
+
+```
+FastAPI startup (lifespan)
+└── build_scheduler() → AsyncIOScheduler.start()
+    └── 每 30 分鐘觸發 _scheduled_push()
+        ├── is_tw_market_window(now)?
+        │   └── YES → push_tw_stocks()
+        │       └── get_rich_tw_stocks(TW_STOCKS)  ← 共用 service
+        └── is_us_market_window(now)?
+            └── YES → push_us_stocks()
+                └── get_us_stocks(US_STOCKS)       ← 共用 service
+
+HTTP API（手動觸發）
+├── GET /api/v1/tgMessage/{id}?stock=0050,2330
+│   └── get_rich_tw_stocks(codes)               ← 同一 service
+│       → send_rich_stock_message(id, 'TW')
+└── GET /api/v1/usMessage/{id}?stock=AAPL,NVDA
+    └── get_us_stocks(symbols)                  ← 同一 service
+        → send_rich_stock_message(id, 'US')
+
+共用底層
+├── get_rich_tw_stocks() / get_us_stocks()
+│   ├── Redis cache hit → RichStockData
+│   └── cache miss → fetch_tw_rich_stock() / fetch_us_stock()
+│       → indicators.calculate(hist)
+│       → Redis.put(key, data, TTL=300)
+└── send_rich_stock_message()
+    ├── format_rich_stock_message() → MarkdownV2 str
+    └── httpx.post(Telegram API)
+
+FastAPI shutdown (lifespan)
+└── scheduler.shutdown()
+```
