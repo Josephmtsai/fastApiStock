@@ -11,6 +11,9 @@ REDIS_PORT: int = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_PASSWORD: str | None = os.getenv('REDIS_PASSWORD') or None
 TELEGRAM_TOKEN: str = os.getenv('TELEGRAM_TOKEN', '')
 TELEGRAM_USER_ID: str = os.getenv('TELEGRAM_USER_ID', '')
+GOOGLE_SHEETS_ID: str = os.getenv('GOOGLE_SHEETS_ID', '')
+GOOGLE_SHEETS_PORTFOLIO_GID: str = os.getenv('GOOGLE_SHEETS_PORTFOLIO_GID', '')
+PORTFOLIO_CACHE_TTL: int = int(os.getenv('PORTFOLIO_CACHE_TTL', '3600'))
 
 
 def tw_stock_codes() -> list[str]:

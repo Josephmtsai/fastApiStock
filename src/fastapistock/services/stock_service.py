@@ -7,8 +7,11 @@ No HTTP imports belong here; all external I/O goes through repositories.
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
+from typing import cast
 
 from fastapistock.cache import redis_cache
+from fastapistock.config import PORTFOLIO_CACHE_TTL
+from fastapistock.repositories.portfolio_repo import PortfolioEntry, fetch_portfolio
 from fastapistock.repositories.twstock_repo import fetch_stock, fetch_tw_rich_stock
 from fastapistock.schemas.stock import RichStockData, StockData
 
@@ -17,6 +20,7 @@ logger = logging.getLogger(__name__)
 _CACHE_TTL = 5  # 5 seconds
 _RICH_CACHE_TTL = 300  # 5 minutes for rich stock data
 _MAX_WORKERS = 5  # parallel yfinance fetches for multi-stock requests
+_PORTFOLIO_CACHE_KEY = 'portfolio:tw'
 
 
 def _cache_key(code: str) -> str:
@@ -141,6 +145,83 @@ def get_rich_tw_stock(code: str) -> RichStockData:
     return stock
 
 
+def _get_cached_portfolio() -> dict[str, PortfolioEntry]:
+    """Return portfolio from Redis cache, fetching live on miss or unavailability.
+
+    On a cache hit, deserialises each entry from the stored dict.
+    On a cache miss or Redis unavailability (get returns None), fetches live
+    from Google Sheets and stores the result (TTL=PORTFOLIO_CACHE_TTL) when
+    the portfolio is non-empty.
+
+    Returns:
+        Mapping from symbol to PortfolioEntry; empty dict when portfolio is
+        unconfigured or the Sheets request fails.
+    """
+    raw = redis_cache.get(_PORTFOLIO_CACHE_KEY)
+    if raw is not None:
+        logger.info('Portfolio cache hit')
+        portfolio: dict[str, PortfolioEntry] = {}
+        for symbol, entry_raw in raw.items():
+            entry_dict = cast(dict[str, object], entry_raw)
+            portfolio[symbol] = PortfolioEntry(
+                symbol=cast(str, entry_dict['symbol']),
+                shares=int(cast(float, entry_dict['shares'])),
+                avg_cost=float(cast(float, entry_dict['avg_cost'])),
+                unrealized_pnl=float(cast(float, entry_dict['unrealized_pnl'])),
+            )
+        return portfolio
+
+    logger.info('Portfolio cache miss — fetching from Google Sheets')
+    live = fetch_portfolio()
+    if live:
+        serialised: dict[str, object] = {
+            sym: {
+                'symbol': e.symbol,
+                'shares': e.shares,
+                'avg_cost': e.avg_cost,
+                'unrealized_pnl': e.unrealized_pnl,
+            }
+            for sym, e in live.items()
+        }
+        redis_cache.put(_PORTFOLIO_CACHE_KEY, serialised, PORTFOLIO_CACHE_TTL)
+    return live
+
+
+def _merge_portfolio(
+    stocks: list[RichStockData],
+    portfolio: dict[str, PortfolioEntry],
+) -> list[RichStockData]:
+    """Merge portfolio positions into a list of RichStockData (pure function).
+
+    For each stock whose symbol appears in *portfolio*, a new RichStockData
+    is created via ``model_copy`` with ``avg_cost``, ``unrealized_pnl``, and
+    ``shares`` populated.  Stocks absent from *portfolio* are returned unchanged.
+
+    Args:
+        stocks: List of RichStockData snapshots to enrich.
+        portfolio: Mapping from symbol to PortfolioEntry.
+
+    Returns:
+        New list of RichStockData with portfolio fields merged where available.
+    """
+    merged: list[RichStockData] = []
+    for stock in stocks:
+        entry = portfolio.get(stock.symbol)
+        if entry is not None:
+            merged.append(
+                stock.model_copy(
+                    update={
+                        'avg_cost': entry.avg_cost,
+                        'unrealized_pnl': entry.unrealized_pnl,
+                        'shares': entry.shares,
+                    }
+                )
+            )
+        else:
+            merged.append(stock)
+    return merged
+
+
 def get_rich_tw_stocks(codes: list[str]) -> list[RichStockData]:
     """Return rich snapshots for multiple TW stocks using parallel fetching.
 
@@ -173,4 +254,6 @@ def get_rich_tw_stocks(codes: list[str]) -> list[RichStockData]:
                 code = future_to_code[future]
                 results[code] = future.result()
 
-    return [results[code] for code in cleaned]
+    stocks = [results[code] for code in cleaned]
+    portfolio = _get_cached_portfolio()
+    return _merge_portfolio(stocks, portfolio)

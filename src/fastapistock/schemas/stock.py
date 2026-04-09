@@ -51,6 +51,10 @@ class RichStockData(BaseModel):
         volume_avg20: 20-day average volume.
         week52_high: Highest price in available history (proxy for 52-week high).
         week52_low: Lowest price in available history (proxy for 52-week low).
+        premarket_price: US pre-market price; None for TW or outside pre-market hours.
+        avg_cost: Average cost per share (portfolio); None when stock not held.
+        unrealized_pnl: Unrealized profit/loss in TWD; None when not held.
+        shares: Number of shares held; None when not held.
     """
 
     symbol: str
@@ -73,3 +77,7 @@ class RichStockData(BaseModel):
     volume_avg20: int
     week52_high: float | None = None
     week52_low: float | None = None
+    premarket_price: float | None = None
+    avg_cost: float | None = None
+    unrealized_pnl: float | None = None
+    shares: int | None = None

@@ -119,22 +119,36 @@ def _format_rich_block(stock: RichStockData) -> str:
         f'   漲跌: `{sign}{stock.change:.2f}` \\({pct_esc}%\\)',
     ]
 
+    if stock.avg_cost is not None and stock.shares is not None:
+        pnl_pct = (
+            (stock.price - stock.avg_cost) / stock.avg_cost * 100
+            if stock.avg_cost
+            else 0.0
+        )
+        pnl_sign = '+' if pnl_pct >= 0 else ''
+        pnl_pct_esc = _escape_md(f'{pnl_sign}{pnl_pct:.2f}')
+        cost_esc = _escape_md(f'{stock.avg_cost:.2f}')
+        lines.append('   ─── 持倉 ───')
+        lines.append(
+            f'   持股: `{stock.shares:,}`   成本: `{cost_esc}` \\({pnl_pct_esc}%\\)'
+        )
+        if stock.unrealized_pnl is not None:
+            pnl_abs_sign = '+' if stock.unrealized_pnl >= 0 else ''
+            pnl_abs_esc = _escape_md(f'{pnl_abs_sign}{stock.unrealized_pnl:,.0f}')
+            lines.append(f'   損益: `{pnl_abs_esc} TWD`')
+
+    if stock.market == 'US' and stock.premarket_price is not None:
+        pm_change = stock.premarket_price - stock.prev_close
+        pm_sign = '+' if pm_change >= 0 else ''
+        pm_pct = (pm_change / stock.prev_close * 100) if stock.prev_close else 0.0
+        pm_pct_esc = _escape_md(f'{pm_sign}{pm_pct:.2f}')
+        lines.append(f'   盤前: `{stock.premarket_price:.2f} USD`  \\({pm_pct_esc}%\\)')
+
     if stock.rsi is not None:
         rsi_tag = (
             '  ⚠️超買' if stock.rsi >= 70 else ('  ⚠️超賣' if stock.rsi <= 30 else '')
         )
         lines.append(f'   RSI\\(14\\): `{stock.rsi:.1f}`{rsi_tag}')
-
-    if (
-        stock.macd is not None
-        and stock.macd_signal is not None
-        and stock.macd_hist is not None
-    ):
-        cross = '金叉↑' if stock.macd_hist > 0 else '死叉↓'
-        lines.append(
-            f'   MACD: `{stock.macd:.3f}` 訊: `{stock.macd_signal:.3f}`'
-            f' 柱: `{stock.macd_hist:.3f}` \\({cross}\\)'
-        )
 
     ma_parts = []
     if stock.ma20 is not None:
@@ -145,29 +159,6 @@ def _format_rich_block(stock: RichStockData) -> str:
         ma_parts.append(f'MA50:{stock.ma50:.0f}{d}')
     if ma_parts:
         lines.append(f'   均線: `{"  ".join(ma_parts)}`')
-
-    if (
-        stock.bb_upper is not None
-        and stock.bb_mid is not None
-        and stock.bb_lower is not None
-    ):
-        bb_tag = ''
-        if stock.price >= stock.bb_upper:
-            bb_tag = '  ⚠️觸上軌'
-        elif stock.price <= stock.bb_lower:
-            bb_tag = '  ⚠️觸下軌'
-        lines.append(
-            f'   布林: `{stock.bb_lower:.2f} / {stock.bb_mid:.2f}'
-            f' / {stock.bb_upper:.2f}`{bb_tag}'
-        )
-
-    if stock.volume_avg20 > 0:
-        ratio = stock.volume / stock.volume_avg20
-        vol_tag = '放量↑' if ratio > 1.5 else ('縮量↓' if ratio < 0.5 else '正常')
-        ratio_esc = _escape_md(f'{ratio:.1f}')
-        lines.append(
-            f'   成交量: `{stock.volume:,}` \\(均量比:{ratio_esc}x {vol_tag}\\)'
-        )
 
     if stock.week52_high is not None and stock.week52_low is not None:
         h, l_v = stock.week52_high, stock.week52_low
@@ -203,9 +194,7 @@ def _format_rich_block(stock: RichStockData) -> str:
         emoji = '⚖️'
     lines.append('   ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄')
     score_esc = _escape_md(str(result.score))
-    lines.append(
-        f'   {emoji} *{_escape_md(result.verdict)}* \\(評分 {score_esc}/8\\)'
-    )
+    lines.append(f'   {emoji} *{_escape_md(result.verdict)}* \\(評分 {score_esc}/8\\)')
     for reason in result.bull_reasons:
         lines.append(f'   ✅ {_escape_md(reason)}')
     for reason in result.bear_reasons:

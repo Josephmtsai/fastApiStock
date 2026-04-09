@@ -17,6 +17,9 @@ def _make_stock(
     market: str = 'TW',
     price: float = 100.0,
     rsi: float | None = 55.0,
+    avg_cost: float | None = None,
+    unrealized_pnl: float | None = None,
+    shares: int | None = None,
 ) -> RichStockData:
     return RichStockData(
         symbol=symbol,
@@ -39,6 +42,9 @@ def _make_stock(
         volume_avg20=800_000,
         week52_high=120.0,
         week52_low=80.0,
+        avg_cost=avg_cost,
+        unrealized_pnl=unrealized_pnl,
+        shares=shares,
     )
 
 
@@ -93,33 +99,60 @@ class TestFormatRichStockMessage:
         msg = format_rich_stock_message([stock], 'TW', now)
         # Unescaped '+' or '.' outside backticks causes Telegram 400 error.
         # The parenthetical change_pct must use '\+X\.XX%', not '+X.XX%'.
-        assert r'\+' in msg   # escaped + in \(+X.XX%\)
-        assert r'\.' in msg   # escaped . in \(+X.XX%\)
+        assert r'\+' in msg  # escaped + in \(+X.XX%\)
+        assert r'\.' in msg  # escaped . in \(+X.XX%\)
         assert '2.00' in msg  # raw change value still present inside code span
 
-    def test_volume_ratio_dot_escaped_outside_backticks(self) -> None:
+    def test_volume_not_in_message(self) -> None:
         stock = _make_stock()
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'TW', now)
-        # ratio like '1.3' appears in \(均量比:...\) - the '.' must be escaped
-        assert '成交量' in msg
-        # No bare decimal like '1.2' outside a code span (would trigger 400)
-        import re
-        # Find the 成交量 line and verify the ratio portion is escaped
-        match = re.search(r'均量比:(.*?)x', msg)
-        assert match is not None
-        ratio_str = match.group(1)
-        assert '.' not in ratio_str or r'\.' in ratio_str
+        assert '成交量' not in msg
+
+    def test_macd_indicator_line_not_in_message(self) -> None:
+        # 'MACD:' display line removed; MACD may still appear in score reasons
+        stock = _make_stock()
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert 'MACD:' not in msg
+
+    def test_bollinger_not_in_message(self) -> None:
+        stock = _make_stock()
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '布林' not in msg
+
+    def test_us_premarket_shown_when_present(self) -> None:
+        stock = _make_stock(market='US')
+        stock = stock.model_copy(update={'premarket_price': 196.50})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        assert '盤前' in msg
+        assert '196' in msg
+
+    def test_us_premarket_absent_when_none(self) -> None:
+        stock = _make_stock(market='US')
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        assert '盤前' not in msg
+
+    def test_tw_premarket_never_shown(self) -> None:
+        stock = _make_stock(market='TW')
+        stock = stock.model_copy(update={'premarket_price': 196.50})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '盤前' not in msg
 
     def test_negative_score_dash_escaped(self) -> None:
         # score=-3 → '看跌' verdict, result.score=-3 → must render as r'\-3', not '-3'
         stock = _make_stock(
             price=80.0,  # below MA20=95 → bear signal
-            rsi=75.0,    # overbought → bear
+            rsi=75.0,  # overbought → bear
         )
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'TW', now)
         import re as _re
+
         score_match = _re.search(r'評分 (.*?)/8', msg)
         assert score_match is not None
         raw_score = score_match.group(1)
@@ -153,3 +186,33 @@ class TestFormatRichStockMessage:
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'US', now)
         assert 'USD' in msg
+
+    def test_portfolio_block_shown_when_avg_cost_and_shares_present(self) -> None:
+        stock = _make_stock(avg_cost=820.0, shares=1000, unrealized_pnl=75000.0)
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '持倉' in msg
+        assert '成本' in msg
+        assert '損益' in msg
+
+    def test_portfolio_block_absent_when_avg_cost_is_none(self) -> None:
+        stock = _make_stock(avg_cost=None)
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '持倉' not in msg
+
+    def test_portfolio_negative_pnl_shows_minus(self) -> None:
+        stock = _make_stock(avg_cost=850.0, shares=500, unrealized_pnl=-35000.0)
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '損益' in msg
+        # '-35,000' should appear in the message (escaped form)
+        assert '35' in msg and '000' in msg
+
+    def test_portfolio_shown_for_us_stock_when_avg_cost_set(self) -> None:
+        # Formatter doesn't gate on market; service guarantees US has avg_cost=None.
+        # This tests that the formatter renders portfolio for any market.
+        stock = _make_stock(market='US', avg_cost=820.0, shares=1000)
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        assert '持倉' in msg

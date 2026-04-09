@@ -110,13 +110,15 @@ def test_send_rich_returns_false_on_request_error(mock_post: MagicMock) -> None:
 
 
 def test_format_rich_block_bb_upper_tag() -> None:
+    # Bollinger band display removed (Track 1); score reasons may still reference BB
     msg = format_rich_stock_message([_STOCK_AT_BB_UPPER], 'TW', _NOW)
-    assert '觸上軌' in msg
+    assert '布林' not in msg or '觸上軌' not in msg  # display line gone
 
 
 def test_format_rich_block_bb_lower_tag() -> None:
+    # Bollinger band display removed (Track 1); score reasons may still reference BB
     msg = format_rich_stock_message([_STOCK_AT_BB_LOWER], 'TW', _NOW)
-    assert '觸下軌' in msg
+    assert '布林' not in msg or '觸下軌' not in msg  # display line gone
 
 
 def test_format_rich_block_rsi_overbought() -> None:
