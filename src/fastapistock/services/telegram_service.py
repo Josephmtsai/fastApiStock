@@ -107,6 +107,7 @@ def _format_rich_block(stock: RichStockData) -> str:
     """
     arrow = '🔺' if stock.change >= 0 else '🔻'
     sign = '+' if stock.change >= 0 else ''
+    sign_esc = '\\+' if stock.change >= 0 else ''
     currency = 'TWD' if stock.market == 'TW' else 'USD'
     prev_label = '昨收' if stock.market == 'TW' else '前收'
 
@@ -114,7 +115,7 @@ def _format_rich_block(stock: RichStockData) -> str:
         f'{arrow} *{_escape_md(stock.symbol)}* {_escape_md(stock.display_name)}',
         f'   現價: `{stock.price:.2f} {currency}`'
         f'   {prev_label}: `{stock.prev_close:.2f}`',
-        f'   漲跌: `{sign}{stock.change:.2f}` \\({sign}{stock.change_pct:.2f}%\\)',
+        f'   漲跌: `{sign}{stock.change:.2f}` \\({sign_esc}{stock.change_pct:.2f}%\\)',
     ]
 
     if stock.rsi is not None:
