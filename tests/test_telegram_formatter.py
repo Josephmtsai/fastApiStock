@@ -87,14 +87,29 @@ class TestFormatRichStockMessage:
         msg = format_rich_stock_message([stock], 'TW', now)
         assert 'RSI' not in msg
 
-    def test_positive_change_pct_plus_escaped_outside_backticks(self) -> None:
+    def test_positive_change_pct_plus_and_dot_escaped_outside_backticks(self) -> None:
         stock = _make_stock(price=100.0)
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'TW', now)
-        # Unescaped '+' outside backticks causes Telegram 400 error.
-        # The parenthetical change_pct section must use '\+', not '+'.
-        assert r'\+' in msg  # escaped + in \(+X.XX%\)
-        assert '2.00' in msg  # change value present
+        # Unescaped '+' or '.' outside backticks causes Telegram 400 error.
+        # The parenthetical change_pct must use '\+X\.XX%', not '+X.XX%'.
+        assert r'\+' in msg   # escaped + in \(+X.XX%\)
+        assert r'\.' in msg   # escaped . in \(+X.XX%\)
+        assert '2.00' in msg  # raw change value still present inside code span
+
+    def test_volume_ratio_dot_escaped_outside_backticks(self) -> None:
+        stock = _make_stock()
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        # ratio like '1.3' appears in \(均量比:...\) - the '.' must be escaped
+        assert '成交量' in msg
+        # No bare decimal like '1.2' outside a code span (would trigger 400)
+        import re
+        # Find the 成交量 line and verify the ratio portion is escaped
+        match = re.search(r'均量比:(.*?)x', msg)
+        assert match is not None
+        ratio_str = match.group(1)
+        assert '.' not in ratio_str or r'\.' in ratio_str
 
     def test_footer_present(self) -> None:
         stock = _make_stock()

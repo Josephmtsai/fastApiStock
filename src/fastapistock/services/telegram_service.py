@@ -107,7 +107,8 @@ def _format_rich_block(stock: RichStockData) -> str:
     """
     arrow = '🔺' if stock.change >= 0 else '🔻'
     sign = '+' if stock.change >= 0 else ''
-    sign_esc = '\\+' if stock.change >= 0 else ''
+    # Use :+.2f to include the sign, then escape both '+'/'-' and '.'
+    pct_esc = _escape_md(f'{stock.change_pct:+.2f}')
     currency = 'TWD' if stock.market == 'TW' else 'USD'
     prev_label = '昨收' if stock.market == 'TW' else '前收'
 
@@ -115,7 +116,7 @@ def _format_rich_block(stock: RichStockData) -> str:
         f'{arrow} *{_escape_md(stock.symbol)}* {_escape_md(stock.display_name)}',
         f'   現價: `{stock.price:.2f} {currency}`'
         f'   {prev_label}: `{stock.prev_close:.2f}`',
-        f'   漲跌: `{sign}{stock.change:.2f}` \\({sign_esc}{stock.change_pct:.2f}%\\)',
+        f'   漲跌: `{sign}{stock.change:.2f}` \\({pct_esc}%\\)',
     ]
 
     if stock.rsi is not None:
@@ -163,8 +164,9 @@ def _format_rich_block(stock: RichStockData) -> str:
     if stock.volume_avg20 > 0:
         ratio = stock.volume / stock.volume_avg20
         vol_tag = '放量↑' if ratio > 1.5 else ('縮量↓' if ratio < 0.5 else '正常')
+        ratio_esc = _escape_md(f'{ratio:.1f}')
         lines.append(
-            f'   成交量: `{stock.volume:,}` \\(均量比:{ratio:.1f}x {vol_tag}\\)'
+            f'   成交量: `{stock.volume:,}` \\(均量比:{ratio_esc}x {vol_tag}\\)'
         )
 
     if stock.week52_high is not None and stock.week52_low is not None:
