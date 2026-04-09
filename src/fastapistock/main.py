@@ -6,7 +6,8 @@ middleware and exception handlers. Zero business logic lives here.
 
 import logging
 import logging.config
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -16,7 +17,8 @@ from starlette.responses import JSONResponse, Response
 from fastapistock.exceptions import register_exception_handlers
 from fastapistock.middleware.logging import LoggingMiddleware
 from fastapistock.middleware.rate_limit import get_limiter
-from fastapistock.routers import health, index, stocks, telegram
+from fastapistock.routers import health, index, stocks, telegram, us_telegram
+from fastapistock.scheduler import build_scheduler
 
 _LOGGING_CONFIG = {
     'version': 1,
@@ -84,13 +86,36 @@ class _RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
         return await call_next(request)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage APScheduler lifecycle tied to the FastAPI application.
+
+    Starts the scheduler on application startup and shuts it down cleanly
+    on application shutdown, regardless of how the shutdown is triggered.
+
+    Args:
+        app: The FastAPI application instance (unused but required by protocol).
+
+    Yields:
+        Control to the running application.
+    """
+    scheduler = build_scheduler()
+    scheduler.start()
+    _logger.info('APScheduler started')
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+        _logger.info('APScheduler stopped')
+
+
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application.
 
     Returns:
         A fully configured FastAPI instance ready to serve requests.
     """
-    application = FastAPI(title='FastAPI Stock', version='0.1.0')
+    application = FastAPI(title='FastAPI Stock', version='0.1.0', lifespan=_lifespan)
 
     # Middleware order: outermost first (LoggingMiddleware wraps everything).
     application.add_middleware(LoggingMiddleware)
@@ -102,6 +127,7 @@ def create_app() -> FastAPI:
     application.include_router(health.router)
     application.include_router(stocks.router)
     application.include_router(telegram.router)
+    application.include_router(us_telegram.router)
 
     return application
 

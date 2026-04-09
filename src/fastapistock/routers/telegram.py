@@ -10,8 +10,8 @@ from fastapi import APIRouter, Query
 
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.common import ResponseEnvelope
-from fastapistock.services.stock_service import get_stocks
-from fastapistock.services.telegram_service import send_stock_message
+from fastapistock.services.stock_service import get_rich_tw_stocks
+from fastapistock.services.telegram_service import send_rich_stock_message
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def send_telegram_stock_info(
         return ResponseEnvelope(status='error', message='No valid stock codes provided')
 
     try:
-        stocks = get_stocks(codes)
+        stocks = get_rich_tw_stocks(codes)
     except StockNotFoundError as exc:
         logger.warning('Stock not found during Telegram push: %s', exc)
         return ResponseEnvelope(status='error', message=str(exc))
@@ -55,7 +55,7 @@ async def send_telegram_stock_info(
     if not stocks:
         return ResponseEnvelope(status='error', message='No stock data retrieved')
 
-    sent = send_stock_message(id, stocks)
+    sent = send_rich_stock_message(id, stocks, market='TW')
     if sent:
         return ResponseEnvelope(status='success', message=f'Message sent to {id}')
     return ResponseEnvelope(status='error', message='Failed to send Telegram message')

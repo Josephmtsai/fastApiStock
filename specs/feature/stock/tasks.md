@@ -18,8 +18,8 @@
 
 **Purpose**: 新增依賴、更新設定，不涉及業務邏輯
 
-- [ ] T001 在 `pyproject.toml` dependencies 新增 `"apscheduler>=3.10,<4"`，執行 `uv add "apscheduler>=3.10,<4"` 鎖定版本
-- [ ] T002 在 `src/fastapistock/config.py` 新增 `TELEGRAM_USER_ID: str`、`tw_stock_codes() -> list[str]`、`us_stock_symbols() -> list[str]` 三個 config 項目，所有值由 `os.getenv()` 讀取
+- [X] T001 在 `pyproject.toml` dependencies 新增 `"apscheduler>=3.10,<4"`，執行 `uv add "apscheduler>=3.10,<4"` 鎖定版本
+- [X] T002 在 `src/fastapistock/config.py` 新增 `TELEGRAM_USER_ID: str`、`tw_stock_codes() -> list[str]`、`us_stock_symbols() -> list[str]` 三個 config 項目，所有值由 `os.getenv()` 讀取
 
 **Checkpoint**: `uv run python -c "from fastapistock.config import tw_stock_codes; print(tw_stock_codes())"` 不拋出例外
 
@@ -31,14 +31,14 @@
 
 **⚠️ CRITICAL**: 所有 user story 均需等此 phase 完成
 
-- [ ] T003 在 `src/fastapistock/schemas/stock.py` 新增 `RichStockData` Pydantic model（20 個欄位：symbol, display_name, market Literal['TW','US'], price, prev_close, change, change_pct, ma20, ma50, rsi, macd, macd_signal, macd_hist, bb_upper, bb_mid, bb_lower, volume, volume_avg20, week52_high, week52_low）；現有 `StockData` 不動
-- [ ] T004 建立 `src/fastapistock/services/indicators.py`，實作 `IndicatorResult` frozen dataclass 和 `calculate(hist: pd.DataFrame) -> IndicatorResult`（RSI-14、MACD-12/26/9、MA20、MA50、Bollinger Bands-20/2、volume_avg20、week52_high/low），歷史不足欄位回傳 `None`
-- [ ] T005 [P] 在 `src/fastapistock/services/indicators.py` 新增 `ScoreResult` frozen dataclass 和 `score_stock(price: float, change_pct: float, indicators: IndicatorResult) -> ScoreResult`，評分規則依 data-model.md §5 實作（範圍 -8~+8，≥+3 看漲，≤-3 看跌）
-- [ ] T006 [P] 建立 `src/fastapistock/services/indicators.py` 內的 `_escape_md(text: str) -> str` helper，escape MarkdownV2 特殊字元（`_ * [ ] ( ) ~ > # + - = | { } . !`）
-- [ ] T007 在 `src/fastapistock/services/telegram_service.py` 新增 `format_rich_stock_message(stocks: list[RichStockData], market: Literal['TW', 'US'], now: datetime) -> str`（依 contracts/telegram-message-format.md 規範，使用 MarkdownV2，呼叫 `_escape_md`）
-- [ ] T008 在 `src/fastapistock/services/telegram_service.py` 新增 `send_rich_stock_message(user_id: str, stocks: list[RichStockData], market: Literal['TW', 'US']) -> bool`，使用 `parse_mode='MarkdownV2'`，timeout=10 s
-- [ ] T009 [P] 建立 `tests/test_indicators.py`，測試：`calculate()` 給定 60 列 OHLCV DataFrame 回傳正確 RSI/MACD/MA/BB；歷史不足 20 列時 bb_upper 為 None；`score_stock()` RSI<30 得分 +2；`score_stock()` MACD hist>0 且 MACD>0 得分 +2；金叉看漲 score≥3 回傳 verdict='看漲'
-- [ ] T010 [P] 建立 `tests/test_telegram_formatter.py`，測試：`format_rich_stock_message()` 對台股輸出含 `*台股定時推播*`；對美股輸出含 `*美股定時推播*`；特殊字元（如 `+2.30`）被正確 escape；RSI 欄位為 None 時對應行不出現在輸出中
+- [X] T003 在 `src/fastapistock/schemas/stock.py` 新增 `RichStockData` Pydantic model（20 個欄位：symbol, display_name, market Literal['TW','US'], price, prev_close, change, change_pct, ma20, ma50, rsi, macd, macd_signal, macd_hist, bb_upper, bb_mid, bb_lower, volume, volume_avg20, week52_high, week52_low）；現有 `StockData` 不動
+- [X] T004 建立 `src/fastapistock/services/indicators.py`，實作 `IndicatorResult` frozen dataclass 和 `calculate(hist: pd.DataFrame) -> IndicatorResult`（RSI-14、MACD-12/26/9、MA20、MA50、Bollinger Bands-20/2、volume_avg20、week52_high/low），歷史不足欄位回傳 `None`
+- [X] T005 [P] 在 `src/fastapistock/services/indicators.py` 新增 `ScoreResult` frozen dataclass 和 `score_stock(price: float, change_pct: float, indicators: IndicatorResult) -> ScoreResult`，評分規則依 data-model.md §5 實作（範圍 -8~+8，≥+3 看漲，≤-3 看跌）
+- [X] T006 [P] 建立 `src/fastapistock/services/indicators.py` 內的 `_escape_md(text: str) -> str` helper，escape MarkdownV2 特殊字元（`_ * [ ] ( ) ~ > # + - = | { } . !`）
+- [X] T007 在 `src/fastapistock/services/telegram_service.py` 新增 `format_rich_stock_message(stocks: list[RichStockData], market: Literal['TW', 'US'], now: datetime) -> str`（依 contracts/telegram-message-format.md 規範，使用 MarkdownV2，呼叫 `_escape_md`）
+- [X] T008 在 `src/fastapistock/services/telegram_service.py` 新增 `send_rich_stock_message(user_id: str, stocks: list[RichStockData], market: Literal['TW', 'US']) -> bool`，使用 `parse_mode='MarkdownV2'`，timeout=10 s
+- [X] T009 [P] 建立 `tests/test_indicators.py`，測試：`calculate()` 給定 60 列 OHLCV DataFrame 回傳正確 RSI/MACD/MA/BB；歷史不足 20 列時 bb_upper 為 None；`score_stock()` RSI<30 得分 +2；`score_stock()` MACD hist>0 且 MACD>0 得分 +2；金叉看漲 score≥3 回傳 verdict='看漲'
+- [X] T010 [P] 建立 `tests/test_telegram_formatter.py`，測試：`format_rich_stock_message()` 對台股輸出含 `*台股定時推播*`；對美股輸出含 `*美股定時推播*`；特殊字元（如 `+2.30`）被正確 escape；RSI 欄位為 None 時對應行不出現在輸出中
 
 **Checkpoint**: `uv run pytest tests/test_indicators.py tests/test_telegram_formatter.py -v` 全部 PASS
 
@@ -52,10 +52,10 @@
 
 ### Implementation: US1
 
-- [ ] T011 [US1] 在 `src/fastapistock/repositories/twstock_repo.py` 新增 `fetch_tw_rich_stock(code: str) -> RichStockData`，使用 `yf.Ticker(symbol).history(period='6mo')` 取 6 個月資料，呼叫 `indicators.calculate(hist)` 填充技術指標；現有 `fetch_stock()` 不修改
-- [ ] T012 [US1] 在 `src/fastapistock/services/stock_service.py` 新增 `get_rich_tw_stock(code: str) -> RichStockData` 和 `get_rich_tw_stocks(codes: list[str]) -> list[RichStockData]`，cache key 用 `rich_tw:{code}:{date}`（TTL=300 s），並行抓取 cache miss（複用現有 ThreadPoolExecutor 模式）
-- [ ] T013 [US1] 修改 `src/fastapistock/routers/telegram.py` 的 `send_telegram_stock_info()`，將 `get_stocks()` 改為 `get_rich_tw_stocks()`，`send_stock_message()` 改為 `send_rich_stock_message(id, stocks, market='TW')`；path/query params/response envelope 不變
-- [ ] T014 [US1] 建立 `tests/test_tw_telegram_rich.py`，mock `get_rich_tw_stocks` 和 `send_rich_stock_message`，測試：正常台股代碼回傳 `{"status": "success"}`；非數字代碼（如 "abc"）被過濾回傳 `{"status": "error"}`；空 stock 參數回傳 error；`send_rich_stock_message` 被呼叫時 market='TW'
+- [X] T011 [US1] 在 `src/fastapistock/repositories/twstock_repo.py` 新增 `fetch_tw_rich_stock(code: str) -> RichStockData`，使用 `yf.Ticker(symbol).history(period='6mo')` 取 6 個月資料，呼叫 `indicators.calculate(hist)` 填充技術指標；現有 `fetch_stock()` 不修改
+- [X] T012 [US1] 在 `src/fastapistock/services/stock_service.py` 新增 `get_rich_tw_stock(code: str) -> RichStockData` 和 `get_rich_tw_stocks(codes: list[str]) -> list[RichStockData]`，cache key 用 `rich_tw:{code}:{date}`（TTL=300 s），並行抓取 cache miss（複用現有 ThreadPoolExecutor 模式）
+- [X] T013 [US1] 修改 `src/fastapistock/routers/telegram.py` 的 `send_telegram_stock_info()`，將 `get_stocks()` 改為 `get_rich_tw_stocks()`，`send_stock_message()` 改為 `send_rich_stock_message(id, stocks, market='TW')`；path/query params/response envelope 不變
+- [X] T014 [US1] 建立 `tests/test_tw_telegram_rich.py`，mock `get_rich_tw_stocks` 和 `send_rich_stock_message`，測試：正常台股代碼回傳 `{"status": "success"}`；非數字代碼（如 "abc"）被過濾回傳 `{"status": "error"}`；空 stock 參數回傳 error；`send_rich_stock_message` 被呼叫時 market='TW'
 
 **Checkpoint**: `curl "http://localhost:8000/api/v1/tgMessage/TEST_ID?stock=0050"` → `{"status":"success"}` 且 Telegram 收到含技術分析的 MarkdownV2 訊息
 
@@ -69,12 +69,12 @@
 
 ### Implementation: US2
 
-- [ ] T015 [P] [US2] 建立 `src/fastapistock/repositories/us_stock_repo.py`，實作 `fetch_us_stock(symbol: str) -> RichStockData`：random sleep 0.1–0.5 s；`yf.Ticker(symbol).history(period='6mo', timeout=10)`；空 DataFrame 拋出 `StockNotFoundError`；呼叫 `indicators.calculate(hist)`；market='US'
-- [ ] T016 [P] [US2] 建立 `src/fastapistock/services/us_stock_service.py`，實作 `get_us_stock(symbol: str) -> RichStockData` 和 `get_us_stocks(symbols: list[str]) -> list[RichStockData]`，cache key `us_stock:{symbol}:{date}`（TTL=300 s），並行抓取 cache miss
-- [ ] T017 [US2] 建立 `src/fastapistock/routers/us_telegram.py`，定義 `router = APIRouter(prefix='/api/v1/usMessage', tags=['us-telegram'])` 和 `send_us_telegram_stock_info()`，ticker 過濾規則：strip + upper + `isalpha()` 過濾非英文字母；呼叫 `get_us_stocks()` + `send_rich_stock_message(id, stocks, market='US')`
-- [ ] T018 [US2] 在 `src/fastapistock/main.py` 的 `create_app()` 中 include `us_telegram.router`
-- [ ] T019 [US2] 建立 `tests/test_us_telegram.py`，mock `get_us_stocks` 和 `send_rich_stock_message`，測試：正常 ticker 回傳 success；小寫 `aapl` 自動轉大寫成功；含數字的 ticker（`AAP1`）被過濾回傳 error；空 stock 回傳 error；market='US' 被正確傳遞
-- [ ] T020 [P] [US2] 建立 `tests/test_us_stock_repo.py`，mock `yfinance.Ticker`，測試：正常抓取回傳 `RichStockData`；empty DataFrame 拋出 `StockNotFoundError`；symbol 不加 `.TW` suffix（`AAPL` 保持 `AAPL`）
+- [X] T015 [P] [US2] 建立 `src/fastapistock/repositories/us_stock_repo.py`，實作 `fetch_us_stock(symbol: str) -> RichStockData`：random sleep 0.1–0.5 s；`yf.Ticker(symbol).history(period='6mo', timeout=10)`；空 DataFrame 拋出 `StockNotFoundError`；呼叫 `indicators.calculate(hist)`；market='US'
+- [X] T016 [P] [US2] 建立 `src/fastapistock/services/us_stock_service.py`，實作 `get_us_stock(symbol: str) -> RichStockData` 和 `get_us_stocks(symbols: list[str]) -> list[RichStockData]`，cache key `us_stock:{symbol}:{date}`（TTL=300 s），並行抓取 cache miss
+- [X] T017 [US2] 建立 `src/fastapistock/routers/us_telegram.py`，定義 `router = APIRouter(prefix='/api/v1/usMessage', tags=['us-telegram'])` 和 `send_us_telegram_stock_info()`，ticker 過濾規則：strip + upper + `isalpha()` 過濾非英文字母；呼叫 `get_us_stocks()` + `send_rich_stock_message(id, stocks, market='US')`
+- [X] T018 [US2] 在 `src/fastapistock/main.py` 的 `create_app()` 中 include `us_telegram.router`
+- [X] T019 [US2] 建立 `tests/test_us_telegram.py`，mock `get_us_stocks` 和 `send_rich_stock_message`，測試：正常 ticker 回傳 success；小寫 `aapl` 自動轉大寫成功；含數字的 ticker（`AAP1`）被過濾回傳 error；空 stock 回傳 error；market='US' 被正確傳遞
+- [X] T020 [P] [US2] 建立 `tests/test_us_stock_repo.py`，mock `yfinance.Ticker`，測試：正常抓取回傳 `RichStockData`；empty DataFrame 拋出 `StockNotFoundError`；symbol 不加 `.TW` suffix（`AAPL` 保持 `AAPL`）
 
 **Checkpoint**: `curl "http://localhost:8000/api/v1/usMessage/TEST_ID?stock=AAPL"` → `{"status":"success"}` 且 Telegram 收到美股技術分析訊息
 
@@ -88,11 +88,11 @@
 
 ### Implementation: US3
 
-- [ ] T021 建立 `src/fastapistock/scheduler.py`，實作 `is_tw_market_window(now: datetime) -> bool`（Asia/Taipei 周一~五 08:30–14:00）和 `is_us_market_window(now: datetime) -> bool`（周一~五 ≥17:00 或 周二~六 ≤04:00）；使用 `zoneinfo.ZoneInfo('Asia/Taipei')`
-- [ ] T022 [US3] 在 `src/fastapistock/scheduler.py` 建立 `push_tw_stocks() -> None` 和 `push_us_stocks() -> None`（從 config 讀取 codes/symbols，呼叫 `get_rich_tw_stocks/get_us_stocks`，再呼叫 `send_rich_stock_message(TELEGRAM_USER_ID, ...)`，整個函式 wrap 在 try/except + logger.exception，不 re-raise）
-- [ ] T023 [US3] 在 `src/fastapistock/scheduler.py` 建立 `_scheduled_push() -> None` 和 `build_scheduler() -> AsyncIOScheduler`（`IntervalTrigger(minutes=30, timezone='Asia/Taipei')`，job 為 `_scheduled_push`）
-- [ ] T024 [US3] 修改 `src/fastapistock/main.py`：新增 `@asynccontextmanager async def lifespan(app: FastAPI)`，在 startup 呼叫 `build_scheduler().start()`，在 shutdown 呼叫 `scheduler.shutdown(wait=False)`；`create_app()` 加入 `lifespan=lifespan`
-- [ ] T025 [P] [US3] 建立 `tests/test_scheduler.py`，使用 `freezegun.freeze_time` 或直接傳入 `datetime` 物件，測試 12 個邊界案例（依 quickstart.md §關鍵測試案例）：08:30 在台股窗口；08:29 不在；14:00 在台股窗口；14:01 不在；周六 09:00 不在台股窗口；17:00 周三在美股窗口；04:00 周四在美股窗口；04:01 不在；周日 20:00 不在；周六 03:00 在（周五夜延伸）；周六 05:00 不在；周一 03:00 不在美股窗口（周日夜無效）
+- [X] T021 建立 `src/fastapistock/scheduler.py`，實作 `is_tw_market_window(now: datetime) -> bool`（Asia/Taipei 周一~五 08:30–14:00）和 `is_us_market_window(now: datetime) -> bool`（周一~五 ≥17:00 或 周二~六 ≤04:00）；使用 `zoneinfo.ZoneInfo('Asia/Taipei')`
+- [X] T022 [US3] 在 `src/fastapistock/scheduler.py` 建立 `push_tw_stocks() -> None` 和 `push_us_stocks() -> None`（從 config 讀取 codes/symbols，呼叫 `get_rich_tw_stocks/get_us_stocks`，再呼叫 `send_rich_stock_message(TELEGRAM_USER_ID, ...)`，整個函式 wrap 在 try/except + logger.exception，不 re-raise）
+- [X] T023 [US3] 在 `src/fastapistock/scheduler.py` 建立 `_scheduled_push() -> None` 和 `build_scheduler() -> AsyncIOScheduler`（`IntervalTrigger(minutes=30, timezone='Asia/Taipei')`，job 為 `_scheduled_push`）
+- [X] T024 [US3] 修改 `src/fastapistock/main.py`：新增 `@asynccontextmanager async def lifespan(app: FastAPI)`，在 startup 呼叫 `build_scheduler().start()`，在 shutdown 呼叫 `scheduler.shutdown(wait=False)`；`create_app()` 加入 `lifespan=lifespan`
+- [X] T025 [P] [US3] 建立 `tests/test_scheduler.py`，使用 `freezegun.freeze_time` 或直接傳入 `datetime` 物件，測試 12 個邊界案例（依 quickstart.md §關鍵測試案例）：08:30 在台股窗口；08:29 不在；14:00 在台股窗口；14:01 不在；周六 09:00 不在台股窗口；17:00 周三在美股窗口；04:00 周四在美股窗口；04:01 不在；周日 20:00 不在；周六 03:00 在（周五夜延伸）；周六 05:00 不在；周一 03:00 不在美股窗口（周日夜無效）
 
 **Checkpoint**: `uv run uvicorn fastapistock.main:app` 啟動後 log 出現 `APScheduler started`；`uv run pytest tests/test_scheduler.py -v` 12 個案例全 PASS
 
@@ -102,9 +102,9 @@
 
 **Purpose**: 確保全部測試通過、程式碼品質達標
 
-- [ ] T026 [P] 執行 `uv run ruff check . --fix && uv run ruff format .`，修正所有 linting 問題（重點：新增檔案的 import 順序、行長度、單引號）
-- [ ] T027 [P] 執行 `uv run mypy src/`，修正型別錯誤（重點：`Literal['TW','US']` 傳遞正確、`float | None` 欄位處理、`zoneinfo` import）
-- [ ] T028 執行 `uv run pytest --cov=src --cov-report=term-missing`，確認整體覆蓋率 ≥ 80%；補充不足覆蓋的邏輯路徑
+- [X] T026 [P] 執行 `uv run ruff check . --fix && uv run ruff format .`，修正所有 linting 問題（重點：新增檔案的 import 順序、行長度、單引號）
+- [X] T027 [P] 執行 `uv run mypy src/`，修正型別錯誤（重點：`Literal['TW','US']` 傳遞正確、`float | None` 欄位處理、`zoneinfo` import）
+- [X] T028 執行 `uv run pytest --cov=src --cov-report=term-missing`，確認整體覆蓋率 ≥ 80%；補充不足覆蓋的邏輯路徑
 
 ---
 

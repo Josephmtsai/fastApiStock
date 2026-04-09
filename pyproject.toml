@@ -11,6 +11,7 @@ dependencies = [
     "redis>=5.0.0",
     "uvicorn>=0.42.0",
     "yfinance>=1.2.0",
+    "apscheduler>=3.10,<4",
 ]
 
 [dependency-groups]
@@ -24,6 +25,7 @@ dev = [
     "ruff>=0.15.9",
     "types-pyyaml>=6.0.12.20250915",
     "types-requests>=2.33.0.20260402",
+    "freezegun>=1.5",
 ]
 
 [tool.ruff]
