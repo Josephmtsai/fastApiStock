@@ -1,28 +1,32 @@
 # Implementation Plan: FastAPI Project Folder Structure
 
-**Branch**: `main` | **Date**: 2026-04-03 | **Spec**: `specs/main/spec.md`
+**Branch**: `main` | **Date**: 2026-04-06 | **Spec**: `specs/main/spec.md`
 **Input**: Feature specification from `specs/main/spec.md`
 
 ## Summary
 
-Establish the canonical folder layout for `fastApiStock` — a Taiwan stock data
-REST API built with FastAPI. The structure isolates routing, schema, business
-logic, and data-fetch concerns into discrete directories, following FastAPI
-community best practices and the project constitution (Principles I–IV).
+Establish the canonical folder layout for `fastApiStock` — a Taiwan stock data REST API built with
+FastAPI. The structure isolates routing, schema, business logic, data-fetch, **middleware**
+(cross-cutting), and **Redis-backed** cache/rate-limit infrastructure under the installable package
+`fastapistock`, following PEP 517 src layout, FastAPI community practice, and the project
+constitution (Principles I–V).
 
 ## Technical Context
 
 **Language/Version**: Python 3.11 (`.python-version`)
-**Primary Dependencies**: FastAPI 0.135+, Uvicorn, httpx, python-dotenv, Pydantic v2
-**Storage**: Local file cache (JSON/pickle); no relational DB in v1
-**Testing**: pytest + pytest-cov + httpx (async test client)
+**Primary Dependencies**: FastAPI 0.135+, Uvicorn, httpx, python-dotenv, Pydantic v2, **redis-py**
+**Storage**: **Redis** (cache + rate limit state); no relational DB in v1
+**Testing**: pytest + pytest-cov + httpx (async test client); fakeredis where integration tests need
+Redis without a live server
 **Target Platform**: Linux server (Docker-compatible)
 **Project Type**: web-service (JSON REST API)
-**Performance Goals**: ≤ 200 ms p95 for cached endpoints; ≤ 2 s for live-fetch endpoints
+**Performance Goals**: ≤ 200 ms p95 for cached endpoints; ≤ 2 s for live-fetch endpoints (constitution
+IV); reuse connection pools for HTTP/Redis on hot paths (spec P-002, P-005)
 **Constraints**: External TW stock APIs require random delay 0.5–2 s between calls; explicit
-`timeout` on all outgoing requests; rate limiting on all routes
-**Scale/Scope**: Single-developer project; ~10 route endpoints at launch; designed to add
-domains without touching existing files
+`timeout` on all outgoing requests; Redis rate limiting; graceful degradation if Redis is down
+(constitution IV); structured REQ/RES/PERF logging (constitution V)
+**Scale/Scope**: Single-developer project; small route surface; designed to add domains without
+touching unrelated modules
 
 ## Constitution Check
 
@@ -30,12 +34,14 @@ domains without touching existing files
 
 | Principle | Gate | Status |
 |-----------|------|--------|
-| **I. Code Quality** | All public functions typed + docstrings; ruff + mypy pass; no `print()`/`Any` | ✅ Structure enforces this via `src/` layout |
-| **II. Testing Standards** | `tests/unit/` + `tests/integration/` directories; 80%+ coverage | ✅ Defined in spec SC-002 |
-| **III. API Consistency** | All routes via `APIRouter`; envelope `{status, data, message}` in `schemas/common.py` | ✅ FR-001, FR-008 |
-| **IV. Performance & Resilience** | Timeout + random delay in `repositories/`; cache in `src/cache/` | ✅ FR-004, FR-005 |
+| **I. Code Quality** | Typed public API, docstrings, ruff + mypy, config externalised | ✅ FR-005, FR-011 |
+| **II. Testing Standards** | `tests/unit/` + `tests/integration/`; 80%+ coverage | ✅ Spec SC-002 |
+| **III. API Consistency** | `APIRouter` only; envelope in `schemas/common.py`; Redis rate limit | ✅ FR-001, FR-007, FR-008 |
+| **IV. Performance & Resilience** | Timeouts + delay in repos; **Redis-only** cache; no parallel file cache; fallback | ✅ FR-009, FR-011 |
+| **V. Observability** | Single middleware: REQ / RES / PERF log format | ✅ FR-010 |
 
-**Result**: PASS — no violations. No Complexity Tracking entry required.
+**Result**: PASS when implementation matches spec + constitution. Re-run this gate after any
+structural change.
 
 ## Project Structure
 
@@ -56,58 +62,39 @@ specs/main/
 ```text
 fastApiStock/
 ├── src/
-│   ├── __init__.py
-│   ├── main.py              # App factory: create_app(), lifespan, include_router()
-│   ├── config.py            # Settings (pydantic-settings / python-dotenv)
-│   ├── dependencies.py      # Shared Depends(): rate_limiter, get_cache, …
-│   ├── exceptions.py        # Custom exception classes + FastAPI exception_handler()
-│   │
-│   ├── routers/             # One APIRouter per domain
-│   │   ├── __init__.py
-│   │   ├── health.py        # GET /health
-│   │   └── stocks.py        # GET /stocks/{symbol}, GET /stocks/{symbol}/history, …
-│   │
-│   ├── schemas/             # Pydantic v2 models (no SQLAlchemy here)
-│   │   ├── __init__.py
-│   │   ├── common.py        # ResponseEnvelope[T], ErrorDetail
-│   │   └── stock.py         # StockQuote, StockHistory, StockQueryParams
-│   │
-│   ├── services/            # Business logic — no HTTP imports
-│   │   ├── __init__.py
-│   │   └── stock_service.py # StockService: get_quote(), get_history()
-│   │
-│   ├── repositories/        # External data access (httpx, files)
-│   │   ├── __init__.py
-│   │   └── twstock_repo.py  # TwStockRepository: fetch with timeout + random delay
-│   │
-│   └── cache/               # Local cache abstraction
-│       ├── __init__.py
-│       └── file_cache.py    # FileCache: get(), set(), invalidate()
+│   └── fastapistock/           # Installable package (PEP 517)
+│       ├── main.py             # create_app(), middleware order, include_router()
+│       ├── config.py           # Settings from env
+│       ├── exceptions.py       # Exception handlers registration
+│       ├── routers/            # One APIRouter per domain
+│       │   ├── health.py       # GET /health
+│       │   ├── stocks.py       # GET /api/v1/stock/{id}
+│       │   ├── telegram.py     # GET /api/v1/tgMessage/{id}
+│       │   └── index.py        # GET / — API index (optional)
+│       ├── schemas/
+│       │   ├── common.py       # ResponseEnvelope[T]
+│       │   └── stock.py        # StockData, …
+│       ├── services/           # Business orchestration
+│       ├── repositories/       # External I/O (yfinance, HTTP, …)
+│       ├── cache/              # Redis cache helper (redis-py only)
+│       └── middleware/
+│           ├── logging.py      # REQ / RES / PERF (constitution V)
+│           └── rate_limit/     # Redis sliding window + block
 │
 ├── tests/
-│   ├── __init__.py
-│   ├── conftest.py          # Fixtures: test_client, mock_cache, mock_repo
+│   ├── conftest.py
 │   ├── unit/
-│   │   ├── __init__.py
-│   │   ├── test_stock_service.py
-│   │   └── test_file_cache.py
 │   └── integration/
-│       ├── __init__.py
-│       ├── test_health.py
-│       └── test_stocks.py
 │
-├── .env.example             # Template for required env vars
-├── .env                     # Local secrets (gitignored)
+├── .env.example
 ├── pyproject.toml
 ├── uv.lock
-├── CLAUDE.md
 └── .python-version
 ```
 
-**Structure Decision**: Single-project layout (Option 1). No frontend, no mobile.
-`src/` is the importable package root; `tests/` mirrors it. Each concern layer is
-in its own directory — adding a new domain (e.g., `options`) requires only new
-files in `routers/`, `schemas/`, `services/`, `repositories/`.
+**Structure Decision**: **Src layout** with package name `fastapistock`. Cross-cutting HTTP concerns
+live in `middleware/`; domain code stays in `routers/`, `services/`, `repositories/`. Tests live under
+`tests/` and mirror behaviour, not necessarily every subfolder name.
 
 ## Complexity Tracking
 
@@ -117,17 +104,15 @@ files in `routers/`, `schemas/`, `services/`, `repositories/`.
 
 ## Phase 0: Research
 
-*Resolved during planning — no external research required for a structural decision.*
-
 | Unknown | Decision | Rationale |
 |---------|----------|-----------|
-| Cache backend | Local file cache (JSON) | No Redis dependency; MVP; constitution Principle IV |
-| Auth | None in v1 | Out of scope per spec Assumptions; rate limiting covers abuse |
-| Pydantic version | v2 (bundled with FastAPI 0.100+) | Already in `pyproject.toml` via FastAPI dep |
-| DB ORM | None in v1 | External API + file cache only; spec Assumption |
+| Cache + rate limit backend | **Redis** (`redis-py`) | Constitution IV; single source of truth; works across Uvicorn workers |
+| Parallel file cache | **Not allowed** | Constitution IV — no second cache layer |
+| Auth | None in v1 | Spec assumptions; abuse handled by rate limiting |
+| Pydantic version | v2 | FastAPI dependency |
+| DB ORM | None in v1 | External APIs + Redis only |
 
-**Output**: No `research.md` needed — all unknowns resolved from existing `pyproject.toml`
-and spec Assumptions. A `research.md` stub is created for traceability.
+**Output**: Captured above; see `research.md` for any deeper notes.
 
 ---
 
@@ -135,44 +120,48 @@ and spec Assumptions. A `research.md` stub is created for traceability.
 
 ### Data Model (`data-model.md`)
 
-Key entities derived from `src/schemas/`:
+Key entities under `src/fastapistock/schemas/`:
 
 | Entity | Location | Purpose |
 |--------|----------|---------|
-| `ResponseEnvelope[T]` | `schemas/common.py` | Wraps all responses: `{status, data, message}` |
-| `ErrorDetail` | `schemas/common.py` | Structured error body |
-| `StockQuote` | `schemas/stock.py` | Real-time quote data |
-| `StockHistory` | `schemas/stock.py` | Historical OHLCV records |
-| `StockQueryParams` | `schemas/stock.py` | Query string validation |
-| `Settings` | `config.py` | App config loaded from `.env` |
+| `ResponseEnvelope[T]` | `schemas/common.py` | `{status, data, message}` |
+| `StockData` | `schemas/stock.py` | Quote snapshot for `/api/v1/stock/{id}` |
+| `Settings` | `config.py` | Env-driven configuration |
 
 ### Contracts (`contracts/`)
 
-| Route | Method | Response |
-|-------|--------|---------|
+| Route | Method | Response (shape) |
+|-------|--------|------------------|
+| `/` | `GET` | API index (`ResponseEnvelope` list of routes) |
 | `/health` | `GET` | `ResponseEnvelope[{"status": "ok"}]` |
-| `/stocks/{symbol}` | `GET` | `ResponseEnvelope[StockQuote]` |
-| `/stocks/{symbol}/history` | `GET` | `ResponseEnvelope[list[StockHistory]]` |
+| `/api/v1/stock/{id}` | `GET` | `ResponseEnvelope[list[StockData]]` |
+| `/api/v1/tgMessage/{id}` | `GET` | `ResponseEnvelope` (Telegram push result) |
 
-All routes return HTTP 200 on success and HTTP 4xx/5xx with `ResponseEnvelope[null]`
-(`status: "error"`, `message: <reason>`) on failure.
+Success and error bodies use the same envelope; HTTP status codes follow constitution III.
 
 ### Layer Responsibilities
 
-```
-Request → Router → Service → Repository → External API / Cache
-                           ↓
-                     (cache hit) → return immediately
+```text
+HTTP Request
+    → Middleware (rate limit → logging REQ)
+    → Router (thin)
+    → Service (orchestration)
+    → Repository (external API + polite delays + timeouts)
+    → Redis cache (read-through / write-through; graceful skip on failure)
+    → Middleware (logging RES + PERF)
+    → HTTP Response
 ```
 
-- **Router**: validate input (Pydantic), call service, return envelope.
-- **Service**: orchestrate cache check → repo fetch → cache write.
-- **Repository**: HTTP call with `timeout=10`, random sleep 0.5–2 s, structured logging.
-- **Cache**: file-based JSON store keyed by `(symbol, date)`.
+- **Router**: Validate/coerce input, call service, return envelope.
+- **Service**: Orchestrate cache ↔ repository; batch multi-symbol work in one service call where
+  possible (spec P-004).
+- **Repository**: External calls only; enforce timeouts and inter-request delay policy.
+- **Cache**: Redis via `redis-py`; TTL and keys from config/env.
+- **Middleware**: Rate limiting and structured logging — not duplicated in routes.
 
 ---
 
 ## Next Step
 
-Run `/speckit-tasks` against this plan to generate `specs/main/tasks.md` with
-concrete implementation tasks ordered by user story priority.
+Run `/speckit-tasks` against this plan to generate `specs/main/tasks.md` with concrete implementation
+tasks ordered by user story priority.

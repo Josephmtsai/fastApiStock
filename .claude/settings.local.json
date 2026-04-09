@@ -55,7 +55,22 @@
       "Bash(PORT=8003 uv run uvicorn src.fastapistock.main:app --host 127.0.0.1 --port 8003)",
       "Bash(RATE_LIMIT_STORAGE_URI=memory:// uv run:*)",
       "Bash(python -c \"import slowapi\")",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(cat D:/claude/fastApiStock/workflows/*.yml)",
+      "Bash(cat D:/claude/fastApiStock/.github/workflows/*.yml)",
+      "Bash(ls D:/claude/fastApiStock/Dockerfile*)",
+      "Bash(~/.local/bin/uv add:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\); print\\(sys.version\\)\")",
+      "Bash(pip show:*)",
+      "Bash(ls /c/Users/07311.joseph.tsai/scoop/shims/uv*)",
+      "Bash(py --version)",
+      "Bash(/c/Users/07311.joseph.tsai/Anaconda3/envs/pytest/python.exe --version)",
+      "Bash(/c/Users/07311.joseph.tsai/Anaconda3/envs/pytest/Scripts/python.exe --version)",
+      "Bash(python -m ruff check .)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(echo \"RUFF_EXIT:$?\")",
+      "Bash(echo \"MYPY_EXIT:$?\")"
     ]
   }
 }

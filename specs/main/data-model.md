@@ -1,46 +1,37 @@
 # Data Model: fastApiStock
 
-**Date**: 2026-04-03
+**Date**: 2026-04-06
 
-## Schemas (`src/schemas/`)
+## Schemas (`src/fastapistock/schemas/`)
 
 ### `common.py` — Shared envelope
 
-```python
-from typing import Generic, TypeVar
-from pydantic import BaseModel
+All JSON route handlers return `ResponseEnvelope[<domain_model>]` with shape:
 
-T = TypeVar('T')
-
-class ResponseEnvelope(BaseModel, Generic[T]):
-    status: Literal['success', 'error']
-    data: T | None
-    message: str
-```
-
-All route handlers return `ResponseEnvelope[<domain_model>]`.
+- `status`: `'success' | 'error'`
+- `data`: domain payload or `None` on error
+- `message`: human-readable detail (empty on success unless documented)
 
 ### `stock.py` — Stock domain
 
-| Model | Fields | Notes |
-|-------|--------|-------|
-| `StockQuote` | `symbol: str`, `name: str`, `price: float`, `change: float`, `volume: int`, `timestamp: datetime` | Real-time snapshot |
-| `StockHistory` | `date: date`, `open: float`, `high: float`, `low: float`, `close: float`, `volume: int` | OHLCV record |
-| `StockQueryParams` | `start: date \| None`, `end: date \| None`, `limit: int = 30` | Query string for `/history` |
+| Model | Purpose |
+|-------|---------|
+| `StockData` | Snapshot for `GET /api/v1/stock/{id}` — fields per implementation (`Name`, `ChineseName`, `price`, `ma20`, `ma60`, `LastDayPrice`, `Volume`, …) |
 
-## Config (`src/config.py`)
+Historical quote / query-param types are **out of scope** until a route is specified; avoid documenting `StockHistory` here unless implemented.
 
-```python
-class Settings(BaseModel):
-    tw_stock_api_base_url: str   # from env TW_STOCK_API_BASE_URL
-    cache_ttl_seconds: int = 300  # from env CACHE_TTL_SECONDS
-    request_timeout: int = 10     # from env REQUEST_TIMEOUT
-    rate_limit_per_minute: int = 60
-```
+## Config (`src/fastapistock/config.py`)
 
-## Cache Key Convention
+Settings MUST be loaded from environment variables (and optional defaults) per constitution I — the
+exact field names live in code; this document only states intent:
 
-```
-cache/<symbol>/<YYYY-MM-DD>.json   # daily quote snapshot
-cache/<symbol>/history/<YYYY-MM>.json  # monthly history chunk
-```
+- External API / timeout / delay bounds
+- Redis URL and timeouts
+- Rate-limit window / count / block (per route group where applicable)
+- Cache TTL for stock payloads
+
+## Cache key convention (Redis)
+
+Keys MUST be namespaced (e.g. prefix `fastapistock:`) and derived from stable inputs (symbol list,
+date, endpoint version). Exact key grammar is defined in `cache/` implementation — **not** file paths;
+file-based cache directories are obsolete for this project (constitution IV).

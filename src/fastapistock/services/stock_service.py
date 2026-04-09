@@ -9,12 +9,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
 from fastapistock.cache import redis_cache
-from fastapistock.repositories.twstock_repo import fetch_stock
-from fastapistock.schemas.stock import StockData
+from fastapistock.repositories.twstock_repo import fetch_stock, fetch_tw_rich_stock
+from fastapistock.schemas.stock import RichStockData, StockData
 
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 5  # 5 seconds
+_RICH_CACHE_TTL = 300  # 5 minutes for rich stock data
 _MAX_WORKERS = 5  # parallel yfinance fetches for multi-stock requests
 
 
@@ -28,6 +29,18 @@ def _cache_key(code: str) -> str:
         Cache key string (e.g. ``'stock:0050:2026-04-04'``).
     """
     return f'stock:{code}:{date.today().isoformat()}'
+
+
+def _rich_cache_key(code: str) -> str:
+    """Build the Redis cache key for today's rich snapshot of *code*.
+
+    Args:
+        code: Taiwan stock code (e.g. '0050').
+
+    Returns:
+        Cache key string (e.g. ``'rich_tw:0050:2026-04-04'``).
+    """
+    return f'rich_tw:{code}:{date.today().isoformat()}'
 
 
 def get_stock(code: str) -> StockData:
@@ -99,5 +112,65 @@ def get_stocks(codes: list[str]) -> list[StockData]:
             for future in as_completed(future_to_code):
                 code = future_to_code[future]
                 results[code] = future.result()  # re-raises StockNotFoundError if any
+
+    return [results[code] for code in cleaned]
+
+
+def get_rich_tw_stock(code: str) -> RichStockData:
+    """Return the rich technical-analysis snapshot for one TW stock (cache-first).
+
+    Args:
+        code: Taiwan stock code (e.g. '2330').
+
+    Returns:
+        A populated RichStockData instance.
+
+    Raises:
+        StockNotFoundError: Propagated from the repository when the symbol
+            yields no data from Yahoo Finance.
+    """
+    key = _rich_cache_key(code)
+    cached = redis_cache.get(key)
+    if cached is not None:
+        logger.info('Rich cache hit for %s', code)
+        return RichStockData.model_validate(cached)
+
+    logger.info('Rich cache miss for %s — fetching', code)
+    stock = fetch_tw_rich_stock(code)
+    redis_cache.put(key, stock.model_dump(), _RICH_CACHE_TTL)
+    return stock
+
+
+def get_rich_tw_stocks(codes: list[str]) -> list[RichStockData]:
+    """Return rich snapshots for multiple TW stocks using parallel fetching.
+
+    Cache hits are resolved immediately; misses are fetched concurrently.
+
+    Args:
+        codes: Non-empty list of Taiwan stock codes.
+
+    Returns:
+        List of RichStockData in the same order as *codes*.
+
+    Raises:
+        StockNotFoundError: If any symbol in *codes* is not found.
+    """
+    cleaned = [c.strip() for c in codes]
+    results: dict[str, RichStockData] = {}
+    miss_codes: list[str] = []
+
+    for code in cleaned:
+        cached = redis_cache.get(_rich_cache_key(code))
+        if cached is not None:
+            results[code] = RichStockData.model_validate(cached)
+        else:
+            miss_codes.append(code)
+
+    if miss_codes:
+        with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(miss_codes))) as pool:
+            future_to_code = {pool.submit(get_rich_tw_stock, c): c for c in miss_codes}
+            for future in as_completed(future_to_code):
+                code = future_to_code[future]
+                results[code] = future.result()
 
     return [results[code] for code in cleaned]
