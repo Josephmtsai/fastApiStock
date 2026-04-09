@@ -161,7 +161,7 @@ def test_fetch_portfolio_non_numeric_symbol_skipped() -> None:
 
 
 def test_fetch_portfolio_us_normalized_symbol() -> None:
-    csv_text = _make_csv('US_AAPL,Apple,,,,,180.00,12000,')
+    csv_text = _make_csv('US_AAPL,Apple,,,,10,180.00,12000,')
     with (
         patch(_PATCH_ID, '123'),
         patch(_PATCH_US_GID, '320283463'),
@@ -170,6 +170,7 @@ def test_fetch_portfolio_us_normalized_symbol() -> None:
         result = fetch_portfolio_us()
 
     assert 'AAPL' in result
+    assert result['AAPL'].shares == 10
     assert result['AAPL'].avg_cost == pytest.approx(180.0)
     assert result['AAPL'].unrealized_pnl == pytest.approx(12000.0)
 

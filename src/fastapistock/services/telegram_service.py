@@ -135,7 +135,7 @@ def _format_rich_block(stock: RichStockData) -> str:
         if stock.unrealized_pnl is not None:
             pnl_abs_sign = '+' if stock.unrealized_pnl >= 0 else ''
             pnl_abs_esc = _escape_md(f'{pnl_abs_sign}{stock.unrealized_pnl:,.0f}')
-            lines.append(f'   損益: `{pnl_abs_esc} TWD`')
+            lines.append(f'   損益: `{pnl_abs_esc} {currency}`')
 
     if stock.market == 'US' and stock.premarket_price is not None:
         pm_change = stock.premarket_price - stock.prev_close

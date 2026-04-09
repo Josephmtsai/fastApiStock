@@ -10,7 +10,7 @@ Implement US portfolio enrichment for Telegram pushes using a dedicated US API r
 - API path (manual trigger): `GET /api/v1/usMessage/{id}`
 - Scheduler path (automatic trigger): `push_us_stocks()`
 - US portfolio source: same Google Sheet ID with dedicated env var `GOOGLE_SHEETS_PORTFOLIO_GID_US` (example: `320283463`)
-- US fields: `A=symbol_with_prefix`, `G=avg_cost`, `H=unrealized_pnl`
+- US fields: `A=symbol_with_prefix`, `F=shares`, `G=avg_cost`, `H=unrealized_pnl`
 - Cache/fallback policy: Redis-first, graceful degradation on Redis/Sheets failures
 
 ## Technical Context
@@ -125,7 +125,7 @@ flowchart TD
 
 ### Phase 2: US Portfolio Fetch + Normalize
 
-- Extend portfolio repository read path for US columns (`A/G/H`).
+- Extend portfolio repository read path for US columns (`A/F/G/H`).
 - Implement prefix stripping normalization:
   - `US_AAPL -> AAPL`
   - `NASDAQ:AAPL -> AAPL`
@@ -133,8 +133,8 @@ flowchart TD
 
 ### Phase 3: Service Merge + Render
 
-- Merge normalized US portfolio snapshot into US rich stock objects.
-- Render portfolio block in US message only when entry exists.
+- Merge normalized US portfolio snapshot into US rich stock objects (including `shares` from column `F`).
+- Render portfolio block in US message only when entry exists; unrealized PnL line uses `USD`.
 
 ### Phase 4: Scheduler Verification
 

@@ -37,10 +37,12 @@
   - `NYSE-MSFT -> MSFT`
 - [ ] T005 [US1] Parse US fields:
   - `A=symbol_with_prefix`
+  - `F=shares`
   - `G=avg_cost`
   - `H=unrealized_pnl`
 - [ ] T006 [US1] Merge US portfolio snapshot into US stock results in `services/us_stock_service.py`.
 - [ ] T007 [US1] Render portfolio block in `services/telegram_service.py` for US market when data exists.
+  - unrealized PnL line must display `USD` unit.
 
 **Checkpoint**: `GET /api/v1/usMessage/{id}?stock=AAPL` shows portfolio block when entry exists.
 

@@ -16,6 +16,7 @@ _COL_SYMBOL = 0
 _COL_SHARES = 2
 _COL_AVG_COST = 5
 _COL_UNREALIZED_PNL = 8
+_COL_US_SHARES = 5
 _COL_US_AVG_COST = 6
 _COL_US_UNREALIZED_PNL = 7
 
@@ -141,6 +142,7 @@ def fetch_portfolio_us() -> dict[str, PortfolioEntry]:
 
     Expected US mapping:
         A: Symbol with prefix
+        F: Shares
         G: Average cost
         H: Unrealized PnL
 
@@ -185,7 +187,7 @@ def fetch_portfolio_us() -> dict[str, PortfolioEntry]:
         try:
             entry = PortfolioEntry(
                 symbol=normalized,
-                shares=0,
+                shares=int(_parse_number(row[_COL_US_SHARES])),
                 avg_cost=_parse_number(row[_COL_US_AVG_COST]),
                 unrealized_pnl=_parse_number(row[_COL_US_UNREALIZED_PNL]),
             )

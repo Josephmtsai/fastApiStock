@@ -216,3 +216,15 @@ class TestFormatRichStockMessage:
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'US', now)
         assert '持倉' in msg
+
+    def test_us_portfolio_pnl_uses_usd_unit(self) -> None:
+        stock = _make_stock(
+            market='US',
+            avg_cost=180.0,
+            shares=10,
+            unrealized_pnl=12000.0,
+        )
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        assert '損益' in msg
+        assert 'USD' in msg

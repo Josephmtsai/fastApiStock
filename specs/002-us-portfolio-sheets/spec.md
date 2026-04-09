@@ -12,7 +12,7 @@ Users maintain US holdings in Google Sheets and the system appends portfolio fie
 - US API route is independent: `GET /api/v1/usMessage/{id}`
 - US scheduler flow is independent in service logic: `push_us_stocks()`
 - Google Sheet source uses the same sheet ID as other portfolio data, but US data is read from dedicated env-configured GID (example value: `320283463`)
-- US column mapping: `A=symbol_with_prefix`, `G=avg_cost`, `H=unrealized_pnl`
+- US column mapping: `A=symbol_with_prefix`, `F=shares`, `G=avg_cost`, `H=unrealized_pnl`
 
 Data is fetched from Google Sheets CSV export URL (public share link; no OAuth/API key).
 
@@ -28,7 +28,7 @@ A user receiving US Telegram pushes can see `avg_cost` and `unrealized_pnl` inli
 
 **Acceptance Scenarios**:
 
-1. **Given** sheet row `US_AAPL` has `G=180.00`, `H=12000`, **When** pushing `AAPL`, **Then** portfolio block is shown.
+1. **Given** sheet row `US_AAPL` has `F=10`, `G=180.00`, `H=12000`, **When** pushing `AAPL`, **Then** portfolio block is shown.
 2. **Given** symbol is absent in sheet, **When** pushing that symbol, **Then** no portfolio block is rendered for that symbol.
 3. **Given** Sheets is unreachable, **When** US push runs, **Then** message still sends with technical indicators and portfolio block is skipped silently.
 
@@ -66,11 +66,13 @@ Repeated US pushes inside TTL should avoid duplicate Sheets fetches via Redis ca
 - **FR-002**: US portfolio data MUST use same sheet ID and dedicated env var `GOOGLE_SHEETS_PORTFOLIO_GID_US` (example value: `320283463`).
 - **FR-003**: US column mapping MUST be fixed as:
   - `A`: symbol with English prefix
+  - `F`: shares
   - `G`: average cost
   - `H`: unrealized PnL
 - **FR-004**: Symbol matching MUST normalize `A` by removing leading alphabetic prefix and separators, then compare by normalized ticker (e.g., `US_AAPL` -> `AAPL`).
 - **FR-005**: System MUST append portfolio block per US symbol when matched.
 - **FR-006**: Portfolio block MUST include average cost, unrealized PnL, and price-vs-cost percentage.
+- **FR-006a**: US unrealized PnL unit MUST be rendered as `USD` in Telegram message.
 - **FR-007**: US portfolio data MUST use Redis cache only; TTL MUST come from env/config.
 - **FR-008**: All operational values (sheet ID, TW/US gid, timeout, TTL, cache keys) MUST come from env/config and MUST NOT be hardcoded in business logic.
 - **FR-009**: On Sheets fetch failure, system MUST degrade gracefully: skip portfolio block and continue normal US push.
