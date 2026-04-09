@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from fastapistock.repositories.portfolio_repo import PortfolioEntry
 from fastapistock.schemas.stock import RichStockData
 
 _STOCK = RichStockData(
@@ -16,12 +17,26 @@ _STOCK = RichStockData(
     volume=80_000_000,
     volume_avg20=70_000_000,
 )
+_US_PORTFOLIO = {
+    'AAPL': PortfolioEntry(
+        symbol='AAPL',
+        shares=0,
+        avg_cost=180.0,
+        unrealized_pnl=12000.0,
+    )
+}
 
 
 @patch('fastapistock.services.us_stock_service.redis_cache')
 @patch('fastapistock.services.us_stock_service.fetch_us_stock', return_value=_STOCK)
+@patch(
+    'fastapistock.services.us_stock_service.fetch_portfolio_us',
+    return_value=_US_PORTFOLIO,
+)
 def test_get_us_stock_cache_miss_fetches_and_stores(
-    mock_fetch: MagicMock, mock_cache: MagicMock
+    _mock_portfolio: MagicMock,
+    mock_fetch: MagicMock,
+    mock_cache: MagicMock,
 ) -> None:
     from fastapistock.services.us_stock_service import get_us_stock
 
@@ -44,8 +59,14 @@ def test_get_us_stock_cache_hit_returns_cached(mock_cache: MagicMock) -> None:
 
 @patch('fastapistock.services.us_stock_service.redis_cache')
 @patch('fastapistock.services.us_stock_service.fetch_us_stock', return_value=_STOCK)
+@patch(
+    'fastapistock.services.us_stock_service.fetch_portfolio_us',
+    return_value=_US_PORTFOLIO,
+)
 def test_get_us_stocks_parallel_fetch(
-    mock_fetch: MagicMock, mock_cache: MagicMock
+    _mock_portfolio: MagicMock,
+    mock_fetch: MagicMock,
+    mock_cache: MagicMock,
 ) -> None:
     from fastapistock.services.us_stock_service import get_us_stocks
 
@@ -56,10 +77,40 @@ def test_get_us_stocks_parallel_fetch(
 
 
 @patch('fastapistock.services.us_stock_service.redis_cache')
-def test_get_us_stocks_all_cache_hits(mock_cache: MagicMock) -> None:
+@patch(
+    'fastapistock.services.us_stock_service.fetch_portfolio_us',
+    return_value=_US_PORTFOLIO,
+)
+def test_get_us_stocks_all_cache_hits(
+    _mock_portfolio: MagicMock,
+    mock_cache: MagicMock,
+) -> None:
     from fastapistock.services.us_stock_service import get_us_stocks
 
-    mock_cache.get.return_value = _STOCK.model_dump()
+    mock_cache.get.side_effect = [_STOCK.model_dump(), None]
     results = get_us_stocks(['AAPL'])
     assert len(results) == 1
     assert results[0].symbol == 'AAPL'
+
+
+@patch('fastapistock.services.us_stock_service.redis_cache')
+@patch(
+    'fastapistock.services.us_stock_service.fetch_portfolio_us',
+    return_value=_US_PORTFOLIO,
+)
+def test_get_us_stocks_merges_portfolio_fields(
+    mock_portfolio: MagicMock,
+    mock_cache: MagicMock,
+) -> None:
+    from fastapistock.services.us_stock_service import get_us_stocks
+
+    mock_cache.get.side_effect = [None, None, None]
+    with patch(
+        'fastapistock.services.us_stock_service.fetch_us_stock',
+        return_value=_STOCK,
+    ):
+        results = get_us_stocks(['AAPL'])
+
+    assert results[0].avg_cost == 180.0
+    assert results[0].unrealized_pnl == 12000.0
+    mock_portfolio.assert_called_once()

@@ -7,13 +7,16 @@ import pytest
 
 from fastapistock.repositories.portfolio_repo import (
     PortfolioEntry,
+    _normalize_us_symbol,
     _parse_number,
     fetch_portfolio,
+    fetch_portfolio_us,
 )
 
 _MOD = 'fastapistock.repositories.portfolio_repo.config'
 _PATCH_ID = f'{_MOD}.GOOGLE_SHEETS_ID'
-_PATCH_GID = f'{_MOD}.GOOGLE_SHEETS_PORTFOLIO_GID'
+_PATCH_GID = f'{_MOD}.GOOGLE_SHEETS_PORTFOLIO_GID_TW'
+_PATCH_US_GID = f'{_MOD}.GOOGLE_SHEETS_PORTFOLIO_GID_US'
 
 # ---------------------------------------------------------------------------
 # _parse_number unit tests
@@ -46,6 +49,23 @@ def test_parse_number_whitespace_only() -> None:
 
 def test_parse_number_with_surrounding_spaces() -> None:
     assert _parse_number(' 1,234.56 ') == pytest.approx(1234.56)
+
+
+# ---------------------------------------------------------------------------
+# _normalize_us_symbol unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_us_symbol_with_underscore_prefix() -> None:
+    assert _normalize_us_symbol('US_AAPL') == 'AAPL'
+
+
+def test_normalize_us_symbol_with_colon_prefix() -> None:
+    assert _normalize_us_symbol('NASDAQ:AAPL') == 'AAPL'
+
+
+def test_normalize_us_symbol_with_dash_prefix() -> None:
+    assert _normalize_us_symbol('NYSE-MSFT') == 'MSFT'
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +160,32 @@ def test_fetch_portfolio_non_numeric_symbol_skipped() -> None:
     assert list(result.keys()) == ['2330']
 
 
+def test_fetch_portfolio_us_normalized_symbol() -> None:
+    csv_text = _make_csv('US_AAPL,Apple,,,,,180.00,12000,')
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_US_GID, '320283463'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        result = fetch_portfolio_us()
+
+    assert 'AAPL' in result
+    assert result['AAPL'].avg_cost == pytest.approx(180.0)
+    assert result['AAPL'].unrealized_pnl == pytest.approx(12000.0)
+
+
+def test_fetch_portfolio_us_skips_non_alpha_normalized_symbol() -> None:
+    csv_text = _make_csv('US_1234,Nope,,,,,10,20,')
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_US_GID, '320283463'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        result = fetch_portfolio_us()
+
+    assert result == {}
+
+
 def test_fetch_portfolio_request_error_returns_empty() -> None:
     with (
         patch(_PATCH_ID, '123'),
@@ -187,6 +233,19 @@ def test_fetch_portfolio_missing_gid_returns_empty(
         patch(_PATCH_GID, ''),
     ):
         result = fetch_portfolio()
+
+    assert result == {}
+    assert any('not configured' in r.message for r in caplog.records)
+
+
+def test_fetch_portfolio_us_missing_gid_returns_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_US_GID, ''),
+    ):
+        result = fetch_portfolio_us()
 
     assert result == {}
     assert any('not configured' in r.message for r in caplog.records)

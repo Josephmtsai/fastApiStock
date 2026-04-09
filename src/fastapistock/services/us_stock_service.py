@@ -8,8 +8,11 @@ a distinct Redis key prefix ('us_stock:').
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
+from typing import cast
 
 from fastapistock.cache import redis_cache
+from fastapistock.config import PORTFOLIO_CACHE_TTL
+from fastapistock.repositories.portfolio_repo import PortfolioEntry, fetch_portfolio_us
 from fastapistock.repositories.us_stock_repo import fetch_us_stock
 from fastapistock.schemas.stock import RichStockData
 
@@ -17,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 300  # 5 minutes
 _MAX_WORKERS = 5
+_US_PORTFOLIO_CACHE_KEY = 'portfolio:us'
 
 
 def _cache_key(symbol: str) -> str:
@@ -90,4 +94,78 @@ def get_us_stocks(symbols: list[str]) -> list[RichStockData]:
                 symbol = future_to_sym[future]
                 results[symbol] = future.result()
 
-    return [results[s] for s in cleaned]
+    stocks = [results[s] for s in cleaned]
+    portfolio = _get_cached_us_portfolio()
+    return _merge_us_portfolio(stocks, portfolio)
+
+
+def _get_cached_us_portfolio() -> dict[str, PortfolioEntry]:
+    """Return US portfolio from Redis cache, fetching live on miss.
+
+    Returns:
+        Mapping from normalized symbol to PortfolioEntry.
+    """
+    raw = redis_cache.get(_US_PORTFOLIO_CACHE_KEY)
+    if raw is not None and isinstance(raw, dict):
+        logger.info('US portfolio cache hit')
+        portfolio: dict[str, PortfolioEntry] = {}
+        try:
+            for symbol, entry_raw in raw.items():
+                entry_dict = cast(dict[str, object], entry_raw)
+                portfolio[symbol] = PortfolioEntry(
+                    symbol=cast(str, entry_dict['symbol']),
+                    shares=int(cast(float, entry_dict['shares'])),
+                    avg_cost=float(cast(float, entry_dict['avg_cost'])),
+                    unrealized_pnl=float(cast(float, entry_dict['unrealized_pnl'])),
+                )
+        except (KeyError, TypeError, ValueError):
+            logger.warning('US portfolio cache payload malformed; refetching live')
+            portfolio = {}
+        else:
+            return portfolio
+
+    logger.info('US portfolio cache miss — fetching from Google Sheets')
+    live = fetch_portfolio_us()
+    if live:
+        serialised: dict[str, object] = {
+            sym: {
+                'symbol': e.symbol,
+                'shares': e.shares,
+                'avg_cost': e.avg_cost,
+                'unrealized_pnl': e.unrealized_pnl,
+            }
+            for sym, e in live.items()
+        }
+        redis_cache.put(_US_PORTFOLIO_CACHE_KEY, serialised, PORTFOLIO_CACHE_TTL)
+    return live
+
+
+def _merge_us_portfolio(
+    stocks: list[RichStockData],
+    portfolio: dict[str, PortfolioEntry],
+) -> list[RichStockData]:
+    """Merge US portfolio fields into rich stock snapshots.
+
+    Args:
+        stocks: US stock snapshots.
+        portfolio: US portfolio mapping by normalized symbol.
+
+    Returns:
+        Stocks with avg_cost/unrealized_pnl/shares when matched.
+    """
+    merged: list[RichStockData] = []
+    for stock in stocks:
+        entry = portfolio.get(stock.symbol)
+        if entry is None:
+            merged.append(stock)
+            continue
+        merged.append(
+            stock.model_copy(
+                update={
+                    'avg_cost': entry.avg_cost,
+                    'unrealized_pnl': entry.unrealized_pnl,
+                    'shares': entry.shares,
+                }
+            )
+        )
+    return merged
