@@ -230,6 +230,44 @@ def format_rich_stock_message(
     return '\n'.join(lines)
 
 
+def reply_to_chat(chat_id: str, text: str) -> bool:
+    """Send a plain-text reply to a Telegram chat.
+
+    Used by the webhook router to respond to user commands.
+    Falls back silently on error so the caller can still return HTTP 200.
+
+    Args:
+        chat_id: Telegram chat ID to reply to.
+        text: Plain-text message content (no parse_mode).
+
+    Returns:
+        True if the message was delivered successfully, False otherwise.
+    """
+    if not TELEGRAM_TOKEN:
+        logger.error('TELEGRAM_TOKEN is not configured')
+        return False
+
+    url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/sendMessage'
+    payload = {'chat_id': chat_id, 'text': text}
+
+    try:
+        response = httpx.post(url, json=payload, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        logger.info('Reply sent to chat_id=%s', chat_id)
+        return True
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            'Telegram API error for chat_id=%s: %s %s',
+            chat_id,
+            exc.response.status_code,
+            exc.response.text,
+        )
+        return False
+    except httpx.RequestError as exc:
+        logger.error('Telegram request failed for chat_id=%s: %s', chat_id, exc)
+        return False
+
+
 def send_rich_stock_message(
     user_id: str,
     stocks: list[RichStockData],

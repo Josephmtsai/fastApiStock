@@ -9,15 +9,17 @@ import logging.config
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from fastapistock.config import TELEGRAM_TOKEN
 from fastapistock.exceptions import register_exception_handlers
 from fastapistock.middleware.logging import LoggingMiddleware
 from fastapistock.middleware.rate_limit import get_limiter
-from fastapistock.routers import health, index, stocks, telegram, us_telegram
+from fastapistock.routers import health, index, stocks, telegram, us_telegram, webhook
 from fastapistock.scheduler import build_scheduler
 
 _LOGGING_CONFIG = {
@@ -44,6 +46,30 @@ logging.config.dictConfig(_LOGGING_CONFIG)
 _logger = logging.getLogger(__name__)
 
 _RATE_LIMIT_EXEMPT = {'/health'}
+
+_BOT_COMMANDS = [
+    {'command': 'q', 'description': '本季投資達成率'},
+    {'command': 'us', 'description': '美股報價，例：/us AAPL,TSLA'},
+    {'command': 'tw', 'description': '台股報價，例：/tw 0050,2330'},
+    {'command': 'help', 'description': '顯示所有指令說明'},
+]
+
+
+def _register_bot_commands() -> None:
+    """Register the bot command menu with Telegram via setMyCommands.
+
+    This is an idempotent startup call. Errors are logged but never fatal.
+    """
+    if not TELEGRAM_TOKEN:
+        _logger.warning('TELEGRAM_TOKEN not set — skipping setMyCommands')
+        return
+    url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/setMyCommands'
+    try:
+        resp = httpx.post(url, json={'commands': _BOT_COMMANDS}, timeout=10)
+        resp.raise_for_status()
+        _logger.info('Telegram bot commands registered successfully')
+    except Exception as exc:  # network errors are non-fatal at startup
+        _logger.warning('Failed to register Telegram bot commands: %s', exc)
 
 
 class _RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
@@ -102,6 +128,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler = build_scheduler()
     scheduler.start()
     _logger.info('APScheduler started')
+    _register_bot_commands()
     try:
         yield
     finally:
@@ -128,6 +155,7 @@ def create_app() -> FastAPI:
     application.include_router(stocks.router)
     application.include_router(telegram.router)
     application.include_router(us_telegram.router)
+    application.include_router(webhook.router)
 
     return application
 
