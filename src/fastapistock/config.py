@@ -18,6 +18,9 @@ GOOGLE_SHEETS_PORTFOLIO_GID_TW: str = os.getenv(
 )
 GOOGLE_SHEETS_PORTFOLIO_GID_US: str = os.getenv('GOOGLE_SHEETS_PORTFOLIO_GID_US', '')
 PORTFOLIO_CACHE_TTL: int = int(os.getenv('PORTFOLIO_CACHE_TTL', '3600'))
+TW_STOCK_CACHE_TTL: int = int(os.getenv('TW_STOCK_CACHE_TTL', '5'))
+TW_RICH_CACHE_TTL: int = int(os.getenv('TW_RICH_CACHE_TTL', '300'))
+US_STOCK_CACHE_TTL: int = int(os.getenv('US_STOCK_CACHE_TTL', '300'))
 
 
 def tw_stock_codes() -> list[str]:

@@ -10,15 +10,17 @@ from datetime import date
 from typing import cast
 
 from fastapistock.cache import redis_cache
-from fastapistock.config import PORTFOLIO_CACHE_TTL
+from fastapistock.config import (
+    PORTFOLIO_CACHE_TTL,
+    TW_RICH_CACHE_TTL,
+    TW_STOCK_CACHE_TTL,
+)
 from fastapistock.repositories.portfolio_repo import PortfolioEntry, fetch_portfolio
 from fastapistock.repositories.twstock_repo import fetch_stock, fetch_tw_rich_stock
 from fastapistock.schemas.stock import RichStockData, StockData
 
 logger = logging.getLogger(__name__)
 
-_CACHE_TTL = 5  # 5 seconds
-_RICH_CACHE_TTL = 300  # 5 minutes for rich stock data
 _MAX_WORKERS = 5  # parallel yfinance fetches for multi-stock requests
 _PORTFOLIO_CACHE_KEY = 'portfolio:tw'
 
@@ -72,8 +74,10 @@ def get_stock(code: str) -> StockData:
 
     logger.info('Cache miss for %s — fetching from yfinance', code)
     stock = fetch_stock(code)
-    logger.info('Fetch complete for %s — storing in cache (ttl=%ds)', code, _CACHE_TTL)
-    redis_cache.put(key, stock.model_dump(), _CACHE_TTL)
+    logger.info(
+        'Fetch complete for %s — storing in cache (ttl=%ds)', code, TW_STOCK_CACHE_TTL
+    )
+    redis_cache.put(key, stock.model_dump(), TW_STOCK_CACHE_TTL)
     return stock
 
 
@@ -141,7 +145,7 @@ def get_rich_tw_stock(code: str) -> RichStockData:
 
     logger.info('Rich cache miss for %s — fetching', code)
     stock = fetch_tw_rich_stock(code)
-    redis_cache.put(key, stock.model_dump(), _RICH_CACHE_TTL)
+    redis_cache.put(key, stock.model_dump(), TW_RICH_CACHE_TTL)
     return stock
 
 

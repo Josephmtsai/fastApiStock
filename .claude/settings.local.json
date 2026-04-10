@@ -70,7 +70,10 @@
       "Bash(python -m ruff check .)",
       "Bash(echo \"EXIT:$?\")",
       "Bash(echo \"RUFF_EXIT:$?\")",
-      "Bash(echo \"MYPY_EXIT:$?\")"
+      "Bash(echo \"MYPY_EXIT:$?\")",
+      "Bash(awk length > 88 {print NR\": \"length\" chars\"}:*)",
+      "Bash(python3:*)",
+      "Bash(/c/Users/07311.joseph.tsai/Anaconda3/envs/py36/python:*)"
     ]
   }
 }
