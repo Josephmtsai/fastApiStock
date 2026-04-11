@@ -16,8 +16,8 @@
 
 **Purpose**: Confirm project wiring and existing helpers before adding new code.
 
-- [ ] T001 Read `src/fastapistock/repositories/portfolio_repo.py` to understand `_SHEETS_CSV_URL`, `_parse_number()`, and the Redis caching pattern used by `investment_plan_repo.py`
-- [ ] T002 Read `src/fastapistock/routers/webhook.py` to locate command dispatch block and `_HELP_TEXT`
+- [x] T001 Read `src/fastapistock/repositories/portfolio_repo.py` to understand `_SHEETS_CSV_URL`, `_parse_number()`, and the Redis caching pattern used by `investment_plan_repo.py`
+- [x] T002 Read `src/fastapistock/routers/webhook.py` to locate command dispatch block and `_HELP_TEXT`
 
 ---
 
@@ -27,7 +27,7 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Add row/col constants `_TW_PNL_ROW = 19`, `_TW_PNL_COL = 8`, `_US_PNL_ROW = 20`, `_US_PNL_COL = 7` to `src/fastapistock/repositories/portfolio_repo.py`
+- [x] T003 Add row/col constants `_TW_PNL_ROW = 19`, `_TW_PNL_COL = 8`, `_US_PNL_ROW = 20`, `_US_PNL_COL = 7` to `src/fastapistock/repositories/portfolio_repo.py`
 
 **Checkpoint**: Constants in place — repo functions and service can now be implemented in parallel.
 
@@ -41,12 +41,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [P] [US1] Implement `fetch_pnl_tw() -> float | None` in `src/fastapistock/repositories/portfolio_repo.py` — Redis cache key `pnl:tw:{YYYY-MM-DD}`, TTL `PORTFOLIO_CACHE_TTL`, reads row 19 col 8 via `_SHEETS_CSV_URL` + `GOOGLE_SHEETS_PORTFOLIO_GID_TW`, uses `_parse_number()`
-- [ ] T005 [P] [US1] Implement `fetch_pnl_us() -> float | None` in `src/fastapistock/repositories/portfolio_repo.py` — Redis cache key `pnl:us:{YYYY-MM-DD}`, TTL `PORTFOLIO_CACHE_TTL`, reads row 20 col 7 via `_SHEETS_CSV_URL` + `GOOGLE_SHEETS_PORTFOLIO_GID_US`, uses `_parse_number()`
-- [ ] T006 [US1] Create `src/fastapistock/services/portfolio_service.py` — implement `_format_pnl_reply(tw_pnl: float | None, us_pnl: float | None) -> str` (pure function, number format `f'{value:+,.0f}'`, handles both-available / partial / both-failed cases per contract)
-- [ ] T007 [US1] Add `get_pnl_reply() -> str` to `src/fastapistock/services/portfolio_service.py` — orchestrates `fetch_pnl_tw()` + `fetch_pnl_us()` then delegates to `_format_pnl_reply()`
-- [ ] T008 [US1] Add `/pnl` dispatch branch to command block in `src/fastapistock/routers/webhook.py` — call `get_pnl_reply()`, pass result to `reply_to_chat(chat_id, reply)`
-- [ ] T009 [US1] Add `/pnl — 投資組合未實現損益（台股＋美股）` to `_HELP_TEXT` in `src/fastapistock/routers/webhook.py`
+- [x] T004 [P] [US1] Implement `fetch_pnl_tw() -> float | None` in `src/fastapistock/repositories/portfolio_repo.py` — Redis cache key `pnl:tw:{YYYY-MM-DD}`, TTL `PORTFOLIO_CACHE_TTL`, reads row 19 col 8 via `_SHEETS_CSV_URL` + `GOOGLE_SHEETS_PORTFOLIO_GID_TW`, uses `_parse_number()`
+- [x] T005 [P] [US1] Implement `fetch_pnl_us() -> float | None` in `src/fastapistock/repositories/portfolio_repo.py` — Redis cache key `pnl:us:{YYYY-MM-DD}`, TTL `PORTFOLIO_CACHE_TTL`, reads row 20 col 7 via `_SHEETS_CSV_URL` + `GOOGLE_SHEETS_PORTFOLIO_GID_US`, uses `_parse_number()`
+- [x] T006 [US1] Create `src/fastapistock/services/portfolio_service.py` — implement `_format_pnl_reply(tw_pnl: float | None, us_pnl: float | None) -> str` (pure function, number format `f'{value:+,.0f}'`, handles both-available / partial / both-failed cases per contract)
+- [x] T007 [US1] Add `get_pnl_reply() -> str` to `src/fastapistock/services/portfolio_service.py` — orchestrates `fetch_pnl_tw()` + `fetch_pnl_us()` then delegates to `_format_pnl_reply()`
+- [x] T008 [US1] Add `/pnl` dispatch branch to command block in `src/fastapistock/routers/webhook.py` — call `get_pnl_reply()`, pass result to `reply_to_chat(chat_id, reply)`
+- [x] T009 [US1] Add `/pnl — 投資組合未實現損益（台股＋美股）` to `_HELP_TEXT` in `src/fastapistock/routers/webhook.py`
 
 **Checkpoint**: `/pnl` command fully routed through repo → service → router. Test with curl from quickstart.md.
 
@@ -60,8 +60,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T010 [P] [US2] Create `tests/test_portfolio_repo_pnl.py` — unit tests for `fetch_pnl_tw()` and `fetch_pnl_us()` using `unittest.mock`: Redis cache hit (returns cached float), Redis miss → httpx success (parses row/col, caches result), httpx error (returns None), row out of range (returns None)
-- [ ] T011 [P] [US2] Create `tests/test_portfolio_service.py` — unit tests for `_format_pnl_reply()`: both values positive, one value None (partial failure message), both None (total failure message), negative TW value with positive US value, zero value shows `+$0 TWD`
+- [x] T010 [P] [US2] Create `tests/test_portfolio_repo_pnl.py` — unit tests for `fetch_pnl_tw()` and `fetch_pnl_us()` using `unittest.mock`: Redis cache hit (returns cached float), Redis miss → httpx success (parses row/col, caches result), httpx error (returns None), row out of range (returns None)
+- [x] T011 [P] [US2] Create `tests/test_portfolio_service.py` — unit tests for `_format_pnl_reply()`: both values positive, one value None (partial failure message), both None (total failure message), negative TW value with positive US value, zero value shows `+$0 TWD`
 
 **Checkpoint**: `uv run pytest` passes. `uv run pytest --cov=src --cov-report=term-missing` shows ≥ 80% coverage on new files.
 
@@ -71,9 +71,9 @@
 
 **Purpose**: Final validation and quality gates.
 
-- [ ] T012 [P] Run `uv run ruff check . --fix && uv run ruff format .` and fix any remaining lint errors in modified files
-- [ ] T013 [P] Run `uv run mypy src/` and resolve any type errors in `portfolio_repo.py`, `portfolio_service.py`, and `webhook.py`
-- [ ] T014 Run `uv run pre-commit run --all-files` — all hooks must pass before commit
+- [x] T012 [P] Run `uv run ruff check . --fix && uv run ruff format .` and fix any remaining lint errors in modified files
+- [x] T013 [P] Run `uv run mypy src/` and resolve any type errors in `portfolio_repo.py`, `portfolio_service.py`, and `webhook.py`
+- [x] T014 Run `uv run pre-commit run --all-files` — all hooks must pass before commit
 - [ ] T015 Run quickstart.md validation: health check, then `/pnl` webhook curl against local server to confirm end-to-end reply
 
 ---
