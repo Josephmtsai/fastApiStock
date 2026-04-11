@@ -40,6 +40,13 @@ curl http://localhost:8000/api/v1/stock/2330,0050
 
 # Telegram push (example — requires bot configuration)
 curl "http://localhost:8000/api/v1/tgMessage/12345?stock=2330"
+
+# Test /pnl webhook command (requires TELEGRAM_WEBHOOK_SECRET set)
+curl -X POST http://localhost:8000/api/v1/webhook/telegram \
+  -H "Content-Type: application/json" \
+  -H "X-Telegram-Bot-Api-Secret-Token: <secret>" \
+  -d '{"update_id":1,"message":{"message_id":1,"from":{"id":<TELEGRAM_USER_ID>,"is_bot":false,"first_name":"Test"},"chat":{"id":<TELEGRAM_USER_ID>},"text":"/pnl"}}'
+# → {"status":"success","data":null,"message":"ok"}  (bot sends reply to chat)
 ```
 
 ## Run Tests
