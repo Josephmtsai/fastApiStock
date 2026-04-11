@@ -22,8 +22,8 @@ _COL_US_SHARES = 5
 _COL_US_AVG_COST = 6
 _COL_US_UNREALIZED_PNL = 7
 
-# PnL summary cells (0-indexed): TW total = I20, US total = H21
-_TW_PNL_ROW: int = 19  # Cell I20
+# PnL summary cells (0-indexed): TW total = I19, US total = H21
+_TW_PNL_ROW: int = 18  # Cell I19
 _TW_PNL_COL: int = 8  # Column I
 _US_PNL_ROW: int = 20  # Cell H21
 _US_PNL_COL: int = 7  # Column H

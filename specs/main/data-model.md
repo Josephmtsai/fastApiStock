@@ -8,7 +8,7 @@
 
 | Market | Sheet GID env var | Cell | Row (0-idx) | Col (0-idx) | Currency |
 |--------|------------------|------|-------------|-------------|----------|
-| TW | `GOOGLE_SHEETS_PORTFOLIO_GID_TW` | I20 | 19 | 8 | TWD |
+| TW | `GOOGLE_SHEETS_PORTFOLIO_GID_TW` | I19 | 18 | 8 | TWD |
 | US | `GOOGLE_SHEETS_PORTFOLIO_GID_US` | H21 | 20 | 7 | TWD |
 
 ---

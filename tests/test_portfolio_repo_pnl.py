@@ -12,11 +12,11 @@ from fastapistock.repositories.portfolio_repo import fetch_pnl_tw, fetch_pnl_us
 
 
 def _make_csv_rows() -> str:
-    """Build a minimal CSV where row 19 col 8 = 1234567 and row 20 col 7 = 890123."""
+    """Build a minimal CSV where row 18 col 8 = 1234567 and row 20 col 7 = 890123."""
     rows = []
     for i in range(22):
         cols = ['0'] * 10
-        if i == 19:
+        if i == 18:
             cols[8] = '1234567'
         if i == 20:
             cols[7] = '890123'
