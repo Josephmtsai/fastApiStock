@@ -118,6 +118,7 @@ def _parse_command(text: str) -> tuple[str, str]:
 _HELP_TEXT = (
     '📋 可用指令\n\n'
     '/q — 本季投資達成率\n'
+    '/pnl — 投資組合未實現損益（台股＋美股）\n'
     '/us AAPL,TSLA — 美股即時報價\n'
     '/tw 0050,2330 — 台股即時報價\n'
     '/help — 顯示此說明'
@@ -268,6 +269,10 @@ async def receive_telegram_update(
     # 5. Dispatch command
     if cmd == '/q':
         reply = _handle_q()
+    elif cmd == '/pnl':
+        from fastapistock.services.portfolio_service import get_pnl_reply
+
+        reply = get_pnl_reply()
     elif cmd == '/us':
         reply = _handle_us(args)
     elif cmd == '/tw':
