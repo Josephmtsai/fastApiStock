@@ -17,7 +17,7 @@ A user sends `/q` to the Telegram bot. The bot looks up the quarterly investment
 
 **Acceptance Scenarios**:
 
-1. **Given** at least one sheet row has a date range covering today, **When** the user sends `/q`, **Then** the bot replies with the current quarter achievement rate as a percentage, total invested USD, total expected USD, and the matched stock symbols.
+1. **Given** at least one sheet row has a date range covering today, **When** the user sends `/q`, **Then** the bot replies with the overall achievement rate as a percentage, total invested USD, total expected USD, and a per-symbol breakdown showing each stock's individual rate, invested amount, and expected amount.
 2. **Given** no sheet row covers today's date, **When** the user sends `/q`, **Then** the bot replies with a friendly message indicating no active quarter data was found.
 3. **Given** the user is not the authorized user, **When** `/q` is sent, **Then** the bot does not reply (message is silently ignored).
 
@@ -112,6 +112,7 @@ The existing scheduler continues to proactively push stock summaries to the conf
 - **FR-012**: Achievement rate MUST be computed as `sum(column G) / sum(column F) × 100%` for all rows where today falls within `[column B, column C]` inclusive.
 - **FR-013**: When `/us` or `/tw` is sent without arguments, the system MUST reply with usage guidance for that command.
 - **FR-014**: When column F sums to zero for the current quarter, the system MUST reply with a message indicating no investment target is set rather than attempting division.
+- **FR-015**: The `/q` reply MUST include a per-symbol breakdown showing each stock's individual achievement rate (column G / column F × 100%), invested amount, and expected amount alongside the aggregate totals.
 
 ### Key Entities
 
@@ -126,7 +127,7 @@ The existing scheduler continues to proactively push stock summaries to the conf
 
 - **SC-001**: The bot responds to all recognized commands (`/q`, `/us`, `/tw`, `/help`) within 5 seconds under normal conditions.
 - **SC-002**: The `/q` command correctly filters only rows whose date range includes today, with zero incorrect inclusions or exclusions.
-- **SC-003**: The achievement rate calculation is accurate to two decimal places.
+- **SC-003**: The achievement rate calculation is accurate to two decimal places at both aggregate and per-symbol levels.
 - **SC-004**: Messages from unauthorized users are never replied to (0% unauthorized reply rate).
 - **SC-005**: The scheduled proactive push continues to function correctly with no regressions after webhook changes are deployed.
 - **SC-006**: Investment plan sheet data is not fetched more than once per cache TTL window, even under multiple rapid `/q` requests.

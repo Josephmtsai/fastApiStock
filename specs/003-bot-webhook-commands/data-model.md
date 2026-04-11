@@ -24,16 +24,30 @@
 
 ---
 
-### 2. `QuarterlyAchievementReport`（dataclass, frozen）
+### 2. `SymbolAchievement`（dataclass, frozen）
 
 > 位置：`src/fastapistock/services/investment_plan_service.py`
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `rate_pct` | `float` | 達成率百分比（Σ invested / Σ expected × 100）|
+| `symbol` | `str` | 股票代號 |
+| `rate_pct` | `float` | 個股達成率（invested / expected × 100）；expected=0 時為 -1.0 |
+| `invested_usd` | `float` | 已投入金額（USD）|
+| `expected_usd` | `float` | 預期金額（USD）|
+
+---
+
+### 3. `QuarterlyAchievementReport`（dataclass, frozen）
+
+> 位置：`src/fastapistock/services/investment_plan_service.py`
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `rate_pct` | `float` | 整體達成率百分比（Σ invested / Σ expected × 100）|
 | `total_invested` | `float` | 當季已投入合計（USD）|
 | `total_expected` | `float` | 當季預期投入合計（USD）|
-| `symbols` | `list[str]` | 當季匹配的股票代號列表 |
+| `symbols` | `list[str]` | 當季匹配的股票代號列表（保持相容性）|
+| `per_symbol` | `list[SymbolAchievement]` | 個股達成率明細，順序與 symbols 一致 |
 | `date_range` | `str` | 顯示用字串，例：`2026-04-01 ~ 2026-06-30` |
 
 **計算公式**：
@@ -41,12 +55,18 @@
 篩選條件：entry.start_date <= today <= entry.end_date
          且 (entry.expected_usd > 0 或 entry.invested_usd > 0)
 
+# 整體
 rate_pct = sum(invested_usd) / sum(expected_usd) × 100
+
+# 個股
+symbol_rate_pct = entry.invested_usd / entry.expected_usd × 100
+                  （entry.expected_usd == 0 時設為 -1.0）
 ```
 
 **邊界情況**：
 - `total_expected == 0`：`rate_pct` 設為 `-1.0`（哨兵值），service 層轉換為錯誤訊息
 - 無匹配行：回傳 `None`，router 層轉換為「無資料」訊息
+- 個股 `expected_usd == 0`：該個股 `rate_pct` 設為 `-1.0`，格式化時顯示 `N/A`
 
 ---
 
