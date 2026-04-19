@@ -40,3 +40,14 @@
 - **Commit**: 遵循 Conventional Commits (feat, fix, docs, test, chore)。
 - **Pre-commit**: 本地必須啟用 `pre-commit`。`git commit` 前必須通過所有 Hooks (Ruff, Mypy, Secrets)。
   - 指令: `uv run pre-commit run --all-files`
+
+## 6. 知識圖譜 (Knowledge Graph)
+專案已建立 graphify 知識圖譜，位於 `graphify-out/graph.json`（786 nodes、1552 edges、30 communities）。
+
+**核心節點（異動前請特別留意）**：`get()`、`RichStockData`、`StockNotFoundError`、`ResponseEnvelope`、`PortfolioEntry`。
+
+**遇到下列情境時，執行 `/graphify query "<問題>"` 查詢圖譜，禁止直接將 graph.json 載入 context**：
+- 修改跨模組的共用元件（Redis cache、ResponseEnvelope、RichStockData、StockNotFoundError）
+- 回答架構問題或追蹤依賴關係
+- 新增功能前確認影響範圍
+- 重構前了解社群邊界

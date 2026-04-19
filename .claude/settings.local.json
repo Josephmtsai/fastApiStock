@@ -72,7 +72,16 @@
       "Bash(echo \"RUFF_EXIT:$?\")",
       "Bash(echo \"MYPY_EXIT:$?\")",
       "Bash(python:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "WebSearch",
+      "Bash(uv tool *)",
+      "Bash(graphify install *)",
+      "Bash(python3 -c \"import graphify; print\\('ok'\\)\")",
+      "Bash(graphify --version)",
+      "Read(//c/Users/Joseph/AppData/Roaming/uv/tools/graphifyy/Scripts/**)",
+      "Bash(echo \"C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe\")",
+      "Bash(C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe *)",
+      "Bash('C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe' -c ' *)"
     ]
   }
 }
