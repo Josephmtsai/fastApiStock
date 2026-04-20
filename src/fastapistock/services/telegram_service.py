@@ -49,7 +49,7 @@ def _format_stock_message(stocks: list[StockData]) -> str:
     for s in stocks:
         block = (
             f'股票名稱: {s.ChineseName}\n'
-            f'現價: {s.price}\n'
+            f'最後成交: {s.price}\n'
             f'月均價: {s.ma20}\n'
             f'季均價: {s.ma60}\n'
             f'昨天收: {s.LastDayPrice}\n'
@@ -114,7 +114,7 @@ def _format_rich_block(stock: RichStockData) -> str:
 
     lines = [
         f'{arrow} *{_escape_md(stock.symbol)}* {_escape_md(stock.display_name)}',
-        f'   現價: `{stock.price:.2f} {currency}`'
+        f'   最後成交: `{stock.price:.2f} {currency}`'
         f'   {prev_label}: `{stock.prev_close:.2f}`',
         f'   漲跌: `{sign}{stock.change:.2f}` \\({pct_esc}%\\)',
     ]
