@@ -27,6 +27,7 @@
   - 所有 API 路由必須實作 **Rate Limiting** (限流)，防範 DoS/暴力破解。
   - 對外請求 (Outgoing Requests) 必須設定 `timeout`。
 - **台股開發專屬**: 呼叫 API 須實作隨機延遲 (Random Sleep)，並建立 Local Cache 避免重複抓取。
+- **美股盤前專屬**: `ticker.info['preMarketPrice']` 因 Yahoo Finance upstream 不穩定禁止使用；盤前價格須改用 `ticker.history(prepost=True, interval='1m', period='1d')` 並過濾 Eastern Time 04:00–09:30 時間區間。
 
 ## 4. 工程哲學與架構 (Architecture)
 - **KISS & YAGNI**: 不重複造輪子，不預先編寫複雜抽象層。

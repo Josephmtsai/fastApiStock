@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from fastapistock.repositories.portfolio_repo import PortfolioEntry
 from fastapistock.schemas.stock import RichStockData
 
@@ -114,3 +116,32 @@ def test_get_us_stocks_merges_portfolio_fields(
     assert results[0].avg_cost == 180.0
     assert results[0].unrealized_pnl == 12000.0
     mock_portfolio.assert_called_once()
+
+
+@patch('fastapistock.services.us_stock_service.redis_cache')
+@patch('fastapistock.services.us_stock_service.fetch_us_stock', return_value=_STOCK)
+@patch(
+    'fastapistock.services.us_stock_service.fetch_portfolio_us',
+    return_value=_US_PORTFOLIO,
+)
+def test_get_us_stock_cache_put_uses_us_stock_cache_ttl(
+    _mock_portfolio: MagicMock,
+    mock_fetch: MagicMock,
+    mock_cache: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """redis_cache.put must be called with the US_STOCK_CACHE_TTL value."""
+    # Patch the imported constant in the service module directly so we do not
+    # need to reload the module (which would discard the existing @patch mocks).
+    monkeypatch.setattr(
+        'fastapistock.services.us_stock_service.US_STOCK_CACHE_TTL', 120
+    )
+    from fastapistock.services.us_stock_service import get_us_stock
+
+    mock_cache.get.return_value = None
+    get_us_stock('AAPL')
+
+    mock_cache.put.assert_called_once()
+    put_args = mock_cache.put.call_args[0]
+    # positional signature: put(key, value, ttl) — third arg is ttl
+    assert put_args[2] == 120

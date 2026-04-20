@@ -11,14 +11,12 @@ from datetime import date
 from typing import cast
 
 from fastapistock.cache import redis_cache
-from fastapistock.config import PORTFOLIO_CACHE_TTL
+from fastapistock.config import PORTFOLIO_CACHE_TTL, US_STOCK_CACHE_TTL
 from fastapistock.repositories.portfolio_repo import PortfolioEntry, fetch_portfolio_us
 from fastapistock.repositories.us_stock_repo import fetch_us_stock
 from fastapistock.schemas.stock import RichStockData
 
 logger = logging.getLogger(__name__)
-
-_CACHE_TTL = 300  # 5 minutes
 _MAX_WORKERS = 5
 _US_PORTFOLIO_CACHE_KEY = 'portfolio:us'
 
@@ -56,7 +54,7 @@ def get_us_stock(symbol: str) -> RichStockData:
 
     logger.info('US cache miss for %s — fetching', symbol)
     stock = fetch_us_stock(symbol)
-    redis_cache.put(key, stock.model_dump(), _CACHE_TTL)
+    redis_cache.put(key, stock.model_dump(), US_STOCK_CACHE_TTL)
     return stock
 
 
