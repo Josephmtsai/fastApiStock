@@ -7,6 +7,7 @@ raw-data normalisation before handing off to the service layer.
 import logging
 import math
 import time
+from datetime import date
 from random import SystemRandom
 
 import pandas as pd
@@ -50,6 +51,59 @@ def _safe_float(value: float, fallback: float) -> float:
         A finite float.
     """
     return fallback if math.isnan(value) else value
+
+
+def _resolve_price(
+    ticker: yf.Ticker,
+    close: 'pd.Series[float]',
+    hist: pd.DataFrame,
+) -> tuple[float, float, str]:
+    """Resolve the most current price, previous close, and price date.
+
+    Attempts to use ``ticker.fast_info`` for a real-time last price.  Falls
+    back to the most recent daily close from *hist* when fast_info data is
+    absent or NaN.
+
+    Args:
+        ticker: Initialised yfinance Ticker object.
+        close: ``hist['Close']`` Series, used as fallback source.
+        hist: Full history DataFrame; its index supplies the fallback date.
+
+    Returns:
+        Tuple of (last_price, prev_close, price_date) where price_date is an
+        ISO-8601 date string ('YYYY-MM-DD').
+    """
+    try:
+        fast_info = ticker.fast_info
+        raw_last: float | None = getattr(fast_info, 'last_price', None)
+        raw_prev: float | None = getattr(fast_info, 'previous_close', None)
+    except AttributeError:
+        raw_last = None
+        raw_prev = None
+
+    use_fast = raw_last is not None and not math.isnan(raw_last)
+
+    if use_fast:
+        last_price = round(float(raw_last), 2)  # type: ignore[arg-type]
+        if raw_prev is not None and not math.isnan(raw_prev):
+            prev_close = round(float(raw_prev), 2)  # type: ignore[arg-type]
+        else:
+            prev_close = (
+                round(float(close.iloc[-1]), 2) if len(close) >= 1 else last_price
+            )
+        price_date = date.today().isoformat()
+        logger.debug(
+            'fast_info price used: last=%.2f prev=%.2f', last_price, prev_close
+        )
+    else:
+        last_price = round(float(close.iloc[-1]), 2)
+        prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else last_price
+        price_date = hist.index[-1].strftime('%Y-%m-%d')
+        logger.warning(
+            'fast_info unavailable — falling back to hist close dated %s', price_date
+        )
+
+    return last_price, prev_close, price_date
 
 
 def fetch_stock(code: str) -> StockData:
@@ -119,8 +173,7 @@ def fetch_tw_rich_stock(code: str) -> RichStockData:
     display_name: str = info.get('longName') or info.get('shortName') or code
 
     close = hist['Close']
-    last_price = round(float(close.iloc[-1]), 2)
-    prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else last_price
+    last_price, prev_close, price_date = _resolve_price(ticker, close, hist)
     change = round(last_price - prev_close, 2)
     change_pct = round((change / prev_close * 100) if prev_close else 0.0, 2)
 
@@ -133,6 +186,7 @@ def fetch_tw_rich_stock(code: str) -> RichStockData:
         prev_close=prev_close,
         change=change,
         change_pct=change_pct,
+        price_date=price_date,
         ma20=result.ma20 or round(last_price, 2),
         ma50=result.ma50,
         rsi=result.rsi,
