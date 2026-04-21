@@ -1,7 +1,7 @@
 # Spec 004 — 持倉成本位階訊號 (Cost Level Signal)
 
-**狀態**: 需求確認完畢，待開發
-**日期**: 2026-04-20
+**狀態**: 需求確認完畢，可開發
+**日期**: 2026-04-21
 **討論狀態**: SA 需求討論已完成，可直接交開發者實作
 
 ---
@@ -82,25 +82,60 @@
 - 不修改 `RichStockData`、`PortfolioEntry` 資料結構
 - 不提供加倉金額或停損建議
 - 不改動技術指標評分（`score_stock`）邏輯
-- 不支援使用者自訂門檻（固定寫在設定檔）
+- 不支援使用者自訂門檻（固定寫死為 module-level constants）
 - 不新增獨立警示通知（只嵌入現有推播）
+
+---
+
+## 資料欄位確認
+
+| 欄位 | 來源 | 說明 |
+|------|------|------|
+| `avg_cost` | `RichStockData.avg_cost: float \| None` | 從 portfolio sheet 注入，台股來自 GID=1004709448（`GOOGLE_SHEETS_PORTFOLIO_GID_TW`） |
+| `ma50` | `RichStockData.ma50: float \| None` | 已在 `_format_rich_block()` 可直接存取 |
+| 美股 `avg_cost` | `RichStockData.avg_cost` | 來自 `GOOGLE_SHEETS_PORTFOLIO_GID_US`，同一套路 |
+
+門檻常數寫在 `telegram_service.py` 頂部（module-level constants），不進 `.env`。
 
 ---
 
 ## 涉及檔案
 
+### 主要實作
+
 - `src/fastapistock/services/telegram_service.py`
+  - 新增 module-level 門檻常數（`_TW_SIGNAL_THRESHOLDS`、`_US_SIGNAL_THRESHOLDS`）
   - 新增 `_calc_cost_signal()` 輔助函式
   - 修改 `_format_rich_block()` 插入訊號行
+
+### 新增 env var（config 擴充）
+
+- `src/fastapistock/config.py`
+  - 新增 `GOOGLE_SHEETS_TW_TRANSACTIONS_GID`（交易紀錄 tab，GID=1491901018）
+  - 目前 Cost Level Signal 不使用此值，但統一管理所有 GID
+
+### 測試
+
 - `tests/test_telegram_formatter.py`
-  - 新增等級計算邏輯的單元測試
-  - 新增邊界條件測試（None、0、MA50 缺失）
+  - 新增等級計算邏輯的單元測試（台股 / 美股各等級）
+  - 新增邊界條件測試（None、0、MA50 缺失、NaN）
 
 ---
 
-## 待討論（下次繼續）
+## 門檻常數（供開發者參考）
 
-- [ ] `avg_cost` 在目前 `RichStockData` schema 中是否已存在？確認欄位名稱
-- [ ] MA50 目前在 `IndicatorResult` 中的欄位名稱確認
-- [ ] 美股持倉成本來自 `us_stock_repo` 還是 Google Sheets？需確認資料流
-- [ ] 台股和美股的門檻是否要抽成環境變數（或寫死在 config）
+```python
+# 台股
+_TW_SIGNAL_THRESHOLDS = [
+    (-25.0, '🔴', '⭐⭐⭐'),
+    (-20.0, '🔴', '⭐⭐'),
+    (-15.0, '🟠', '⭐'),
+]
+
+# 美股
+_US_SIGNAL_THRESHOLDS = [
+    (-30.0, '🔴', '⭐⭐⭐'),
+    (-25.0, '🔴', '⭐⭐'),
+    (-20.0, '🟠', '⭐'),
+]
+```

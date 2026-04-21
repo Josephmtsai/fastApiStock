@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services.telegram_service import (
+    _calc_cost_signal,
     _escape_md,
     format_rich_stock_message,
 )
@@ -20,6 +21,7 @@ def _make_stock(
     avg_cost: float | None = None,
     unrealized_pnl: float | None = None,
     shares: int | None = None,
+    ma50: float | None = 90.0,
 ) -> RichStockData:
     return RichStockData(
         symbol=symbol,
@@ -30,7 +32,7 @@ def _make_stock(
         change=2.0,
         change_pct=2.04,
         ma20=95.0,
-        ma50=90.0,
+        ma50=ma50,
         rsi=rsi,
         macd=0.5,
         macd_signal=0.3,
@@ -228,3 +230,97 @@ class TestFormatRichStockMessage:
         msg = format_rich_stock_message([stock], 'US', now)
         assert '損益' in msg
         assert 'USD' in msg
+
+
+class TestCalcCostSignal:
+    # -----------------------------------------------------------------------
+    # TW positive triggers
+    # -----------------------------------------------------------------------
+    def test_tw_minus20_pct_returns_two_stars(self) -> None:
+        # pnl_pct = (80 - 100) / 100 * 100 = -20% → matches -20 threshold → 🔴⭐⭐
+        result = _calc_cost_signal(price=80.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is not None
+        assert '🔴' in result
+        assert '⭐⭐' in result
+        assert '⭐⭐⭐' not in result
+
+    def test_tw_minus27_pct_returns_three_stars(self) -> None:
+        # pnl_pct = (73 - 100) / 100 * 100 = -27% → matches -25 threshold → 🔴⭐⭐⭐
+        result = _calc_cost_signal(price=73.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is not None
+        assert '🔴' in result
+        assert '⭐⭐⭐' in result
+
+    def test_tw_minus14_pct_returns_none(self) -> None:
+        # pnl_pct = (86 - 100) / 100 * 100 = -14% → below -15 threshold → None
+        result = _calc_cost_signal(price=86.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is None
+
+    # -----------------------------------------------------------------------
+    # US positive triggers
+    # -----------------------------------------------------------------------
+    def test_us_minus21_pct_returns_orange_one_star(self) -> None:
+        # pnl_pct = (79 - 100) / 100 * 100 = -21% → matches -20 threshold → 🟠⭐
+        result = _calc_cost_signal(price=79.0, avg_cost=100.0, ma50=90.0, market='US')
+        assert result is not None
+        assert '🟠' in result
+        assert '⭐' in result
+
+    def test_us_minus31_pct_returns_three_stars(self) -> None:
+        # pnl_pct = (69 - 100) / 100 * 100 = -31% → matches -30 threshold → 🔴⭐⭐⭐
+        result = _calc_cost_signal(price=69.0, avg_cost=100.0, ma50=90.0, market='US')
+        assert result is not None
+        assert '🔴' in result
+        assert '⭐⭐⭐' in result
+
+    # -----------------------------------------------------------------------
+    # Boundary / edge cases
+    # -----------------------------------------------------------------------
+    def test_avg_cost_none_returns_none(self) -> None:
+        result = _calc_cost_signal(price=80.0, avg_cost=None, ma50=90.0, market='TW')
+        assert result is None
+
+    def test_avg_cost_zero_returns_none(self) -> None:
+        result = _calc_cost_signal(price=80.0, avg_cost=0.0, ma50=90.0, market='TW')
+        assert result is None
+
+    def test_ma50_none_returns_none(self) -> None:
+        result = _calc_cost_signal(price=80.0, avg_cost=100.0, ma50=None, market='TW')
+        assert result is None
+
+    def test_price_above_ma50_returns_none(self) -> None:
+        # price=105 > ma50=90, pnl_pct=+5% → no signal regardless of MA50 comparison
+        result = _calc_cost_signal(price=105.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is None
+
+    def test_price_below_ma50_with_signal(self) -> None:
+        # price=84 < ma50=90, pnl_pct=-16% → matches -15 threshold → signal present
+        result = _calc_cost_signal(price=84.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is not None
+        assert '⭐' in result
+        assert 'MA50' in result
+
+    def test_price_below_ma50_at_exact_threshold(self) -> None:
+        # price=80, avg_cost=100, ma50=85 → price < ma50, pnl_pct=-20% → 🔴⭐⭐
+        result = _calc_cost_signal(price=80.0, avg_cost=100.0, ma50=85.0, market='TW')
+        assert result is not None
+        assert '🔴' in result
+        assert '⭐⭐' in result
+
+    # -----------------------------------------------------------------------
+    # Output format validation
+    # -----------------------------------------------------------------------
+    def test_output_contains_money_bag_emoji(self) -> None:
+        result = _calc_cost_signal(price=80.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is not None
+        assert '💰' in result
+
+    def test_output_contains_ma50_broken_text(self) -> None:
+        result = _calc_cost_signal(price=80.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is not None
+        assert 'MA50 已跌破' in result
+
+    def test_output_contains_cost_distance_text(self) -> None:
+        result = _calc_cost_signal(price=80.0, avg_cost=100.0, ma50=90.0, market='TW')
+        assert result is not None
+        assert '距成本' in result

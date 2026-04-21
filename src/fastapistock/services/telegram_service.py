@@ -6,6 +6,7 @@ MarkdownV2 sender (send_rich_stock_message) with full technical indicators.
 """
 
 import logging
+import math
 import re
 from datetime import datetime
 from typing import Literal
@@ -22,6 +23,19 @@ _TELEGRAM_API_BASE = 'https://api.telegram.org'
 _REQUEST_TIMEOUT = 10
 
 _MD_SPECIAL = re.compile(r'([_*\[\]()~`>#+\-=|{}.!\\])')
+
+# Cost level signal thresholds: (pnl_pct_threshold, color_emoji, star_emoji)
+# Sorted from most severe to least — first match wins.
+_TW_SIGNAL_THRESHOLDS: list[tuple[float, str, str]] = [
+    (-25.0, '🔴', '⭐⭐⭐'),
+    (-20.0, '🔴', '⭐⭐'),
+    (-15.0, '🟠', '⭐'),
+]
+_US_SIGNAL_THRESHOLDS: list[tuple[float, str, str]] = [
+    (-30.0, '🔴', '⭐⭐⭐'),
+    (-25.0, '🔴', '⭐⭐'),
+    (-20.0, '🟠', '⭐'),
+]
 
 
 def _escape_md(text: str) -> str:
@@ -94,6 +108,51 @@ def send_stock_message(user_id: str, stocks: list[StockData]) -> bool:
     except httpx.RequestError as exc:
         logger.error('Telegram request failed for user_id=%s: %s', user_id, exc)
         return False
+
+
+def _calc_cost_signal(
+    price: float,
+    avg_cost: float | None,
+    ma50: float | None,
+    market: str,
+) -> str | None:
+    """Calculate the cost level add-on signal line, or None when no signal.
+
+    Args:
+        price: Current stock price.
+        avg_cost: Average cost per share; None or 0 means no position.
+        ma50: 50-day moving average; None means condition 2 not met.
+        market: 'TW' or 'US'.
+
+    Returns:
+        Formatted MarkdownV2 signal line string, or None when conditions not met.
+    """
+    if avg_cost is None or avg_cost == 0:
+        return None
+
+    pnl_pct = (price - avg_cost) / avg_cost * 100
+
+    if not math.isfinite(pnl_pct):
+        logger.warning('_calc_cost_signal: non-finite pnl_pct=%s', pnl_pct)
+        return None
+
+    if ma50 is None or price >= ma50:
+        return None
+
+    thresholds = _TW_SIGNAL_THRESHOLDS if market == 'TW' else _US_SIGNAL_THRESHOLDS
+    matched: tuple[float, str, str] | None = None
+    for threshold, color, stars in thresholds:
+        if pnl_pct <= threshold:
+            matched = (threshold, color, stars)
+            break
+
+    if matched is None:
+        return None
+
+    _, color, stars = matched
+    pnl_esc = _escape_md(f'{pnl_pct:.1f}')
+    pipe_esc = _escape_md('|')
+    return f'   💰 加碼訊號 {color} {stars}  距成本 {pnl_esc}%  {pipe_esc}  MA50 已跌破'
 
 
 def _format_rich_block(stock: RichStockData) -> str:
@@ -199,6 +258,10 @@ def _format_rich_block(stock: RichStockData) -> str:
         lines.append(f'   ✅ {_escape_md(reason)}')
     for reason in result.bear_reasons:
         lines.append(f'   ❌ {_escape_md(reason)}')
+
+    signal = _calc_cost_signal(stock.price, stock.avg_cost, stock.ma50, stock.market)
+    if signal:
+        lines.append(signal)
 
     return '\n'.join(lines)
 
