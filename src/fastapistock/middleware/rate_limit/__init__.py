@@ -6,6 +6,7 @@ Builds one ``RateLimiter`` per route group from env vars and exposes
 Route → env prefix mapping:
     /api/v1/stock/*      → RATE_LIMIT_STOCK_*
     /api/v1/tgMessage/*  → RATE_LIMIT_TG_*
+    /api/v1/reports/*    → RATE_LIMIT_REPORT_*
     everything else      → RATE_LIMIT_*   (default)
 """
 
@@ -16,6 +17,7 @@ from fastapistock.middleware.rate_limit.limiter import RateLimiter
 _limiters: dict[str, RateLimiter] = {
     '/api/v1/stock': RateLimiter(load_config('STOCK')),
     '/api/v1/tgMessage': RateLimiter(load_config('TG')),
+    '/api/v1/reports': RateLimiter(load_config('REPORT')),
 }
 _default_limiter = RateLimiter(load_config())
 

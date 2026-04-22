@@ -56,7 +56,7 @@ def _make_premarket_hist(close: float = 185.5) -> pd.DataFrame:
 def _make_ticker_mock(
     daily_hist: pd.DataFrame,
     premarket_hist: pd.DataFrame | None = None,
-    info: dict | None = None,
+    info: dict[str, object] | None = None,
 ) -> MagicMock:
     """Return a Ticker mock whose .history() returns correct data per call."""
     mock = MagicMock()

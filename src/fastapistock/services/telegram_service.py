@@ -10,10 +10,13 @@ import math
 import re
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from fastapistock.config import TELEGRAM_TOKEN
+from fastapistock.repositories import signal_history_repo
+from fastapistock.repositories.signal_history_repo import SignalRecord
 from fastapistock.schemas.stock import RichStockData, StockData
 from fastapistock.services.indicators import IndicatorResult, score_stock
 
@@ -110,11 +113,52 @@ def send_stock_message(user_id: str, stocks: list[StockData]) -> bool:
         return False
 
 
+_STARS_TO_TIER: dict[str, int] = {
+    '⭐': 1,
+    '⭐⭐': 2,
+    '⭐⭐⭐': 3,
+}
+
+
+def _persist_signal(
+    symbol: str,
+    market: str,
+    stars: str,
+    drop_pct: float,
+    price: float,
+    week52_high: float,
+    ma50: float,
+) -> None:
+    """Write the signal to Redis via signal_history_repo (best-effort).
+
+    Any exception is caught and logged so the push pipeline is never disrupted.
+    """
+    tier = _STARS_TO_TIER.get(stars)
+    if tier is None:
+        logger.warning('Unknown star pattern %r, skip persist', stars)
+        return
+    try:
+        record = SignalRecord(
+            symbol=symbol,
+            market=market,
+            tier=tier,
+            drop_pct=drop_pct,
+            price=price,
+            week52_high=week52_high,
+            ma50=ma50,
+            timestamp=datetime.now(ZoneInfo('Asia/Taipei')),
+        )
+        signal_history_repo.save_signal(record)
+    except Exception as exc:
+        logger.warning('Persist signal failed for %s/%s: %s', market, symbol, exc)
+
+
 def _calc_cost_signal(
     price: float,
     week52_high: float | None,
     ma50: float | None,
     market: str,
+    symbol: str = '',
 ) -> str | None:
     """Calculate the 52-week-high drawdown add-on signal line, or None when no signal.
 
@@ -123,6 +167,8 @@ def _calc_cost_signal(
         week52_high: 52-week high price; None or 0 means data unavailable.
         ma50: 50-day moving average; None means condition not met.
         market: 'TW' or 'US'.
+        symbol: Stock symbol used for history persistence. When empty, no
+            history record is written (useful in tests that only check format).
 
     Returns:
         Formatted MarkdownV2 signal line string, or None when conditions not met.
@@ -150,6 +196,18 @@ def _calc_cost_signal(
         return None
 
     _, color, stars = matched
+
+    if symbol:
+        _persist_signal(
+            symbol=symbol,
+            market=market,
+            stars=stars,
+            drop_pct=drop_pct,
+            price=price,
+            week52_high=week52_high,
+            ma50=ma50,
+        )
+
     drop_esc = _escape_md(f'{drop_pct:.1f}')
     pipe_esc = _escape_md('|')
     return (
@@ -261,7 +319,13 @@ def _format_rich_block(stock: RichStockData) -> str:
     for reason in result.bear_reasons:
         lines.append(f'   ❌ {_escape_md(reason)}')
 
-    signal = _calc_cost_signal(stock.price, stock.week52_high, stock.ma50, stock.market)
+    signal = _calc_cost_signal(
+        stock.price,
+        stock.week52_high,
+        stock.ma50,
+        stock.market,
+        symbol=stock.symbol,
+    )
     if signal:
         lines.append(signal)
 

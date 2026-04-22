@@ -216,5 +216,5 @@ class TestBuildScheduler:
     def test_returns_configured_scheduler(self) -> None:
         scheduler = build_scheduler()
         jobs = scheduler.get_jobs()
-        assert len(jobs) == 1
-        assert jobs[0].id == 'stock_push'
+        job_ids = {job.id for job in jobs}
+        assert job_ids == {'stock_push', 'weekly_report', 'monthly_report'}

@@ -19,7 +19,15 @@ from fastapistock.config import TELEGRAM_TOKEN
 from fastapistock.exceptions import register_exception_handlers
 from fastapistock.middleware.logging import LoggingMiddleware
 from fastapistock.middleware.rate_limit import get_limiter
-from fastapistock.routers import health, index, stocks, telegram, us_telegram, webhook
+from fastapistock.routers import (
+    health,
+    index,
+    reports,
+    stocks,
+    telegram,
+    us_telegram,
+    webhook,
+)
 from fastapistock.scheduler import build_scheduler
 
 _LOGGING_CONFIG = {
@@ -156,6 +164,7 @@ def create_app() -> FastAPI:
     application.include_router(telegram.router)
     application.include_router(us_telegram.router)
     application.include_router(webhook.router)
+    application.include_router(reports.router)
 
     return application
 

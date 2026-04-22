@@ -29,6 +29,9 @@ GOOGLE_SHEETS_INVESTMENT_PLAN_GID: str = os.getenv(
 TELEGRAM_WEBHOOK_SECRET: str = os.getenv('TELEGRAM_WEBHOOK_SECRET', '')
 PORTFOLIO_CACHE_TTL: int = int(os.getenv('PORTFOLIO_CACHE_TTL', '3600'))
 US_STOCK_CACHE_TTL: int = int(os.getenv('US_STOCK_CACHE_TTL', '60'))
+REGULAR_INVESTMENT_TARGET_TWD: int = int(
+    os.getenv('REGULAR_INVESTMENT_TARGET_TWD', '100000')
+)
 
 
 def tw_stock_codes() -> list[str]:

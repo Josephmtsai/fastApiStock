@@ -10,9 +10,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from fastapistock.config import TELEGRAM_USER_ID, tw_stock_codes, us_stock_symbols
+from fastapistock.services.report_service import (
+    send_monthly_report,
+    send_weekly_report,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +146,20 @@ def build_scheduler() -> AsyncIOScheduler:
         trigger=IntervalTrigger(minutes=30, timezone=str(_TZ)),
         id='stock_push',
         name='Scheduled stock push (TW + US)',
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_weekly_report,
+        trigger=CronTrigger(day_of_week='sun', hour=21, minute=0, timezone=str(_TZ)),
+        id='weekly_report',
+        name='Weekly portfolio report',
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_monthly_report,
+        trigger=CronTrigger(day=1, hour=21, minute=0, timezone=str(_TZ)),
+        id='monthly_report',
+        name='Monthly portfolio report',
         replace_existing=True,
     )
     return scheduler

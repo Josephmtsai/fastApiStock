@@ -81,7 +81,10 @@
       "Read(//c/Users/Joseph/AppData/Roaming/uv/tools/graphifyy/Scripts/**)",
       "Bash(echo \"C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe\")",
       "Bash(C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe *)",
-      "Bash('C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe' -c ' *)"
+      "Bash('C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe' -c ' *)",
+      "Bash(git stash *)",
+      "Bash(grep -n \"redis_cache\" D:\\\\\\\\claude\\\\\\\\fastApiStock\\\\\\\\src\\\\\\\\fastapistock\\\\\\\\cache\\\\\\\\__init__.py)",
+      "Bash(grep -n \"signal_history_repo.redis_cache\\\\|portfolio_snapshot_repo.redis_cache\\\\|report_service\\\\.\" D:\\\\\\\\claude\\\\\\\\fastApiStock\\\\\\\\tests\\\\\\\\test_spec005_edge_cases.py)"
     ]
   }
 }
