@@ -215,6 +215,46 @@ def _calc_cost_signal(
     )
 
 
+def _build_price_change_lines(stock: RichStockData, currency: str) -> tuple[str, str]:
+    """Build the price and change lines, adjusting for US pre-market state.
+
+    During US pre-market, `最後成交` shows the live pre-market price tagged with
+    `[盤前]` and `昨收` is the regular-session close (i.e. stock.price). Change
+    is computed against that close. All other cases keep the original layout.
+
+    Args:
+        stock: RichStockData with market, price, prev_close, change fields.
+        currency: Pre-resolved currency label ('TWD' or 'USD').
+
+    Returns:
+        Tuple of (price_line, change_line) MarkdownV2 strings.
+    """
+    if stock.market == 'US' and stock.premarket_price is not None:
+        pm_price = stock.premarket_price
+        pm_change = pm_price - stock.price
+        pm_sign = '+' if pm_change >= 0 else ''
+        pm_pct = (pm_change / stock.price * 100) if stock.price else 0.0
+        pm_pct_esc = _escape_md(f'{pm_sign}{pm_pct:.2f}')
+        pm_tag = _escape_md(' [盤前]')
+        price_line = (
+            f'   最後成交: `{pm_price:.2f} {currency}`{pm_tag}'
+            f'   昨收: `{stock.price:.2f}`'
+        )
+        change_line = f'   漲跌: `{pm_sign}{pm_change:.2f}` \\({pm_pct_esc}%\\)'
+        return price_line, change_line
+
+    sign = '+' if stock.change >= 0 else ''
+    # Use :+.2f to include the sign, then escape both '+'/'-' and '.'
+    pct_esc = _escape_md(f'{stock.change_pct:+.2f}')
+    prev_label = '昨收' if stock.market == 'TW' else '前收'
+    price_line = (
+        f'   最後成交: `{stock.price:.2f} {currency}`'
+        f'   {prev_label}: `{stock.prev_close:.2f}`'
+    )
+    change_line = f'   漲跌: `{sign}{stock.change:.2f}` \\({pct_esc}%\\)'
+    return price_line, change_line
+
+
 def _format_rich_block(stock: RichStockData) -> str:
     """Build a single stock's MarkdownV2 block with technical indicators.
 
@@ -225,17 +265,13 @@ def _format_rich_block(stock: RichStockData) -> str:
         Multi-line MarkdownV2 string for one stock.
     """
     arrow = '🔺' if stock.change >= 0 else '🔻'
-    sign = '+' if stock.change >= 0 else ''
-    # Use :+.2f to include the sign, then escape both '+'/'-' and '.'
-    pct_esc = _escape_md(f'{stock.change_pct:+.2f}')
     currency = 'TWD' if stock.market == 'TW' else 'USD'
-    prev_label = '昨收' if stock.market == 'TW' else '前收'
+    price_line, change_line = _build_price_change_lines(stock, currency)
 
     lines = [
         f'{arrow} *{_escape_md(stock.symbol)}* {_escape_md(stock.display_name)}',
-        f'   最後成交: `{stock.price:.2f} {currency}`'
-        f'   {prev_label}: `{stock.prev_close:.2f}`',
-        f'   漲跌: `{sign}{stock.change:.2f}` \\({pct_esc}%\\)',
+        price_line,
+        change_line,
     ]
 
     if stock.avg_cost is not None and stock.shares is not None:
@@ -255,13 +291,6 @@ def _format_rich_block(stock: RichStockData) -> str:
             pnl_abs_sign = '+' if stock.unrealized_pnl >= 0 else ''
             pnl_abs_esc = _escape_md(f'{pnl_abs_sign}{stock.unrealized_pnl:,.0f}')
             lines.append(f'   損益: `{pnl_abs_esc} {currency}`')
-
-    if stock.market == 'US' and stock.premarket_price is not None:
-        pm_change = stock.premarket_price - stock.prev_close
-        pm_sign = '+' if pm_change >= 0 else ''
-        pm_pct = (pm_change / stock.prev_close * 100) if stock.prev_close else 0.0
-        pm_pct_esc = _escape_md(f'{pm_sign}{pm_pct:.2f}')
-        lines.append(f'   盤前: `{stock.premarket_price:.2f} USD`  \\({pm_pct_esc}%\\)')
 
     if stock.rsi is not None:
         rsi_tag = (

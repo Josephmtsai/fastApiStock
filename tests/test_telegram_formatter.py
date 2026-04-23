@@ -233,6 +233,85 @@ class TestFormatRichStockMessage:
         assert 'USD' in msg
 
 
+class TestPreMarketDisplay:
+    """US pre-market display flips line 2/3 to show live pre-market price."""
+
+    def test_premarket_price_shown_on_line_2_with_tag(self) -> None:
+        stock = _make_stock(market='US', price=387.44)
+        stock = stock.model_copy(update={'premarket_price': 383.32})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        # Pre-market price appears as 最後成交
+        assert '383.32 USD' in msg
+        # Escaped [盤前] tag visible in MarkdownV2
+        assert r'\[盤前\]' in msg
+        # 昨收 uses regular-session close (stock.price)
+        assert '昨收: `387.44`' in msg
+
+    def test_premarket_change_reflects_pm_vs_prev_close(self) -> None:
+        # pm_change = 383.32 - 387.44 = -4.12
+        # pm_pct = -4.12 / 387.44 * 100 ≈ -1.0634 → -1.06%
+        stock = _make_stock(market='US', price=387.44)
+        stock = stock.model_copy(update={'premarket_price': 383.32})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        # Raw change inside backticks is unescaped
+        assert '-4.12' in msg
+        # pct appears in the parenthetical with escaped dot
+        assert r'1\.06' in msg
+
+    def test_premarket_no_legacy_premarket_line(self) -> None:
+        # Legacy output had '盤前: <price> USD  (+X.XX%)' on its own line.
+        # New layout merges it into line 2 — that legacy line must be gone.
+        stock = _make_stock(market='US', price=387.44)
+        stock = stock.model_copy(update={'premarket_price': 383.32})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        # The literal '盤前: `' prefix from the old dedicated line
+        assert '盤前: `' not in msg
+
+    def test_us_without_premarket_uses_legacy_layout(self) -> None:
+        stock = _make_stock(market='US', price=387.44)
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        # No [盤前] tag when premarket_price is None
+        assert r'\[盤前\]' not in msg
+        # Legacy '前收' label for US regular session
+        assert '前收' in msg
+        assert '昨收' not in msg
+
+    def test_tw_never_uses_premarket_layout(self) -> None:
+        # Even if premarket_price were somehow set for TW, market check blocks it.
+        stock = _make_stock(market='TW', price=100.0)
+        stock = stock.model_copy(update={'premarket_price': 95.0})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert r'\[盤前\]' not in msg
+        # TW still uses its own '昨收' label, but no pre-market tag
+        assert '昨收' in msg
+
+    def test_premarket_negative_direction_shows_minus(self) -> None:
+        # premarket (383.32) < price (387.44) → change negative
+        stock = _make_stock(market='US', price=387.44)
+        stock = stock.model_copy(update={'premarket_price': 383.32})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        # Raw value '-4.12' sits inside backticks (unescaped)
+        assert '-4.12' in msg
+        # Escaped negative pct in the parenthetical
+        assert r'\-1\.06' in msg
+
+    def test_premarket_positive_direction_shows_plus(self) -> None:
+        # premarket (200.00) > price (180.00) → change positive
+        stock = _make_stock(market='US', price=180.0)
+        stock = stock.model_copy(update={'premarket_price': 200.0})
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        assert '+20.00' in msg
+        # pm_pct = 20 / 180 * 100 ≈ 11.11%
+        assert r'\+11\.11' in msg
+
+
 class TestCalcCostSignal:
     # -----------------------------------------------------------------------
     # TW positive triggers (week52_high=100 as baseline)
