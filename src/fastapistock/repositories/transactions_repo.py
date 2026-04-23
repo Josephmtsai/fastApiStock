@@ -6,7 +6,8 @@ Sheet column mapping (GID configured via ``GOOGLE_SHEETS_TW_TRANSACTIONS_GID``):
     B (1): 日期        date        (YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD)
     C (2): 成交股數    shares
     D (3): 成本        cost
-    E (4): 買賣別      action ('買' or '賣')
+    E (4): 買賣別      action (contains '買' for entry / '賣' for exit;
+                                     typical values '現買', '沖買', '現賣', '沖賣')
     F (5): 淨股數      net_shares  (signed)
     G (6): 淨金額      net_amount  (buy is negative, sell positive)
     H (7): 年度        year
@@ -41,7 +42,7 @@ _COL_YEAR = 7
 _MIN_COLS = 8  # need at least 8 columns (index 0–7)
 
 _DATE_FORMATS = ('%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d')
-_BUY_ACTION = '買'
+_BUY_MARKER = '買'
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,8 @@ class Transaction:
         date: Execution date.
         shares: Number of shares traded (raw 成交股數).
         cost: Cost per share / total cost column.
-        action: '買' for buy, '賣' for sell.
+        action: Raw 買賣別 cell such as '現買', '沖買', '現賣', '沖賣'
+            (pre-stripped).  Entries contain the '買' token; exits contain '賣'.
         net_shares: Net shares (signed per sheet convention).
         net_amount: Net amount (buy negative, sell positive per sheet convention).
         year: Year column as integer.
@@ -209,6 +211,11 @@ def fetch_tw_transactions() -> list[Transaction]:
 def sum_buy_amount(year: int, month: int) -> float:
     """Return the absolute sum of net_amount for BUY transactions in *year*/*month*.
 
+    A transaction is considered a buy (entry) when its ``action`` cell contains
+    the '買' token.  This covers all real-world variants seen in the sheet —
+    '現買', '沖買', plain '買' — while excluding their sell counterparts
+    ('現賣', '沖賣', '賣').
+
     Args:
         year: Calendar year (4-digit).
         month: Calendar month (1–12).
@@ -219,7 +226,7 @@ def sum_buy_amount(year: int, month: int) -> float:
     """
     total = 0.0
     for tx in fetch_tw_transactions():
-        if tx.action != _BUY_ACTION:
+        if _BUY_MARKER not in tx.action.strip():
             continue
         if tx.date.year != year or tx.date.month != month:
             continue

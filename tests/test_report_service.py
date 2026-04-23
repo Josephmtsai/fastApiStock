@@ -236,3 +236,25 @@ def test_build_weekly_report_fetch_failure_shows_placeholder() -> None:
         text = build_weekly_report(now)
 
     assert '資料讀取失敗' in text
+
+
+def test_build_weekly_report_us_pnl_label_is_twd_not_usd() -> None:
+    """Regression guard for Bug 1: H21 stores TWD, so 美股 delta and current
+    total must be labelled TWD (not USD) in the weekly report output."""
+    now = datetime(2026, 4, 26, 21, 0, tzinfo=_TZ)
+    patches = _patch_repos()  # prev snapshot + current PnL supplied
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        patches[5],
+        patches[6],
+        patches[7],
+    ):
+        text = build_weekly_report(now)
+
+    # '美股' line and 當前總損益 tail must end with TWD, not USD.
+    assert 'USD' not in text
+    assert 'TWD' in text

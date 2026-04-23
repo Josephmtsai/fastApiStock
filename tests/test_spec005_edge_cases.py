@@ -403,6 +403,39 @@ class TestTransactionsEdgeCases:
         ):
             assert sum_buy_amount(2026, 4) == 0.0
 
+    def test_sum_buy_amount_action_variants_counted_by_contains_buy(self) -> None:
+        """Real-world 買賣別 cells are '現買/沖買/現賣/沖賣'.
+
+        Regression guard for Bug 2 (Spec 005): selector must be
+        "action contains '買'" rather than exact-equality '買', otherwise
+        no rows match the realistic sheet and 本月投入 stays at 0.
+        """
+        csv_text = _make_csv(
+            '2330,2026-04-01,1000,820,現買,1000,"-820,000",2026',
+            '0050,2026-04-05,500,150,沖買,500,"-75,000",2026',
+            '2454,2026-04-10,100,900,現賣,-100,"90,000",2026',
+            '3008,2026-04-15,200,500,沖賣,-200,"100,000",2026',
+        )
+        with (
+            patch(_PATCH_TX_ID, '123'),
+            patch(_PATCH_TX_GID, '456'),
+            patch('httpx.get', return_value=_mock_response(csv_text)),
+        ):
+            assert sum_buy_amount(2026, 4) == 895000.0
+
+    def test_sum_buy_amount_backward_compat_plain_buy_still_counts(self) -> None:
+        """Existing sheets using plain '買'/'賣' remain supported."""
+        csv_text = _make_csv(
+            '2330,2026-04-01,1000,820,買,1000,"-820,000",2026',
+            '0050,2026-04-05,500,150,賣,-500,"75,000",2026',
+        )
+        with (
+            patch(_PATCH_TX_ID, '123'),
+            patch(_PATCH_TX_GID, '456'),
+            patch('httpx.get', return_value=_mock_response(csv_text)),
+        ):
+            assert sum_buy_amount(2026, 4) == 820000.0
+
 
 # =============================================================================
 # 4. report_service edge cases

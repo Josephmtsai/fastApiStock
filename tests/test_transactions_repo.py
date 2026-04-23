@@ -210,3 +210,85 @@ def test_sum_buy_amount_returns_zero_when_no_matches() -> None:
         total = sum_buy_amount(2025, 12)
 
     assert total == 0.0
+
+
+def test_sum_buy_amount_counts_xian_buy() -> None:
+    """'現買' (cash buy) 必須被計入。"""
+    csv_text = _make_csv(
+        '2330,2026-04-22,1000,820.5,現買,1000,"-820,500",2026',
+    )
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        assert sum_buy_amount(2026, 4) == 820500.0
+
+
+def test_sum_buy_amount_counts_chong_buy() -> None:
+    """'沖買' (day-trade buy) 必須被計入。"""
+    csv_text = _make_csv(
+        '2330,2026-04-22,1000,820.5,沖買,1000,"-820,500",2026',
+    )
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        assert sum_buy_amount(2026, 4) == 820500.0
+
+
+def test_sum_buy_amount_excludes_xian_sell() -> None:
+    """'現賣' (cash sell) 必須被排除。"""
+    csv_text = _make_csv(
+        '2330,2026-04-22,1000,820.5,現賣,-1000,"820,500",2026',
+    )
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        assert sum_buy_amount(2026, 4) == 0.0
+
+
+def test_sum_buy_amount_excludes_chong_sell() -> None:
+    """'沖賣' (day-trade sell) 必須被排除。"""
+    csv_text = _make_csv(
+        '2330,2026-04-22,1000,820.5,沖賣,-1000,"820,500",2026',
+    )
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        assert sum_buy_amount(2026, 4) == 0.0
+
+
+def test_sum_buy_amount_counts_action_with_surrounding_whitespace() -> None:
+    """CSV 可能含前後空白 — 經 strip 後仍應視為買入。"""
+    csv_text = _make_csv(
+        '2330,2026-04-22,1000,820.5, 現買 ,1000,"-820,500",2026',
+    )
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        assert sum_buy_amount(2026, 4) == 820500.0
+
+
+def test_sum_buy_amount_mixed_actions_only_buys_counted() -> None:
+    """混合四種買賣別 + 跨月份 — 僅計入當月之 *買 變體。"""
+    csv_text = _make_csv(
+        '2330,2026-04-01,1000,820,現買,1000,"-820,000",2026',
+        '0050,2026-04-05,500,150,沖買,500,"-75,000",2026',
+        '2454,2026-04-10,100,900,現賣,-100,"90,000",2026',  # excluded
+        '3008,2026-04-15,200,500,沖賣,-200,"100,000",2026',  # excluded
+        'AAPL,2026-03-31,10,180,現買,10,"-1,800",2026',  # wrong month
+    )
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        assert sum_buy_amount(2026, 4) == 820000.0 + 75000.0

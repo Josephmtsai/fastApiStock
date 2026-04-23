@@ -214,11 +214,11 @@ def _render_position_section(
             _escape_md(f'台股: {_format_currency_delta(tw_delta, "TWD")}{tw_pct_txt}')
         )
         lines.append(
-            _escape_md(f'美股: {_format_currency_delta(us_delta, "USD")}{us_pct_txt}')
+            _escape_md(f'美股: {_format_currency_delta(us_delta, "TWD")}{us_pct_txt}')
         )
 
     current_tw = '資料讀取失敗' if pnl_tw is None else f'{_fmt_signed_int(pnl_tw)} TWD'
-    current_us = '資料讀取失敗' if pnl_us is None else f'{_fmt_signed_int(pnl_us)} USD'
+    current_us = '資料讀取失敗' if pnl_us is None else f'{_fmt_signed_int(pnl_us)} TWD'
     lines.append(_escape_md(f'當前總損益: 台股 {current_tw} | 美股 {current_us}'))
     return lines
 
