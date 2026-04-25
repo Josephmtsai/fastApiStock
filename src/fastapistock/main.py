@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from fastapistock.config import TELEGRAM_TOKEN
+from fastapistock.config import DATABASE_URL, TELEGRAM_TOKEN
 from fastapistock.exceptions import register_exception_handlers
 from fastapistock.middleware.logging import LoggingMiddleware
 from fastapistock.middleware.rate_limit import get_limiter
@@ -80,6 +80,37 @@ def _register_bot_commands() -> None:
         _logger.warning('Failed to register Telegram bot commands: %s', exc)
 
 
+def _verify_database_connection() -> None:
+    """Probe the configured Postgres database at application startup.
+
+    Logs a structured ok / fail event under the
+    ``fastapistock.report_history`` namespace. Failure is non-fatal so a
+    transient DB outage cannot prevent the rest of the service from
+    starting (the report history feature degrades, other endpoints stay
+    up).
+    """
+    history_logger = logging.getLogger('fastapistock.report_history')
+    if not DATABASE_URL:
+        history_logger.warning(
+            'report_history.db.startup.skipped: DATABASE_URL not configured'
+        )
+        return
+    try:
+        from fastapistock.db import get_engine
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.exec_driver_sql('SELECT 1')
+        history_logger.info('report_history.db.startup.ok')
+    except Exception as exc:
+        history_logger.error(
+            'report_history.db.startup.fail: %s: %s',
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+
+
 class _RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     """Middleware that applies per-route sliding-window rate limiting.
 
@@ -137,6 +168,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler.start()
     _logger.info('APScheduler started')
     _register_bot_commands()
+    _verify_database_connection()
     try:
         yield
     finally:

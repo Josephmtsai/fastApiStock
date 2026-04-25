@@ -1,0 +1,52 @@
+# Local development services for spec-006 (Report History Persistence).
+#
+# Usage:
+#   1. Copy .env.example to .env and fill POSTGRES_* + REDIS_* values.
+#   2. Start services:   docker compose -f docker-compose.dev.yml up -d
+#   3. Run migrations:   uv run alembic upgrade head
+#   4. Stop services:    docker compose -f docker-compose.dev.yml down
+#
+# All credentials are injected via environment variables — no hardcoded secrets.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fastapistock-postgres-dev
+    restart: unless-stopped
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fastapistock-redis-dev
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        redis-server;
+      fi'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: fastapistock_postgres_dev_data

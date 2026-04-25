@@ -28,8 +28,13 @@ repos:
     rev: v1.20.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML, pydantic]
+        additional_dependencies:
+          - types-requests
+          - types-PyYAML
+          - pydantic
+          - sqlalchemy>=2.0
         args: [--config-file=mypy.ini]
+        exclude: ^alembic/
 
   # Commit message 規範（Conventional Commits）
   - repo: https://github.com/compilerla/conventional-pre-commit

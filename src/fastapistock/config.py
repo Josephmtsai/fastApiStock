@@ -33,6 +33,41 @@ REGULAR_INVESTMENT_TARGET_TWD: int = int(
     os.getenv('REGULAR_INVESTMENT_TARGET_TWD', '100000')
 )
 
+# ---------------------------------------------------------------------------
+# Spec 006: Report history persistence (Postgres + Google Sheets)
+# All values optional in dev; production (Railway) must supply DATABASE_URL
+# and — if sheet archiving is desired — the Google credentials + sheet IDs.
+# ---------------------------------------------------------------------------
+DATABASE_URL: str | None = os.getenv('DATABASE_URL') or None
+GOOGLE_SERVICE_ACCOUNT_JSON: str | None = (
+    os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') or None
+)
+GOOGLE_SERVICE_ACCOUNT_B64: str | None = os.getenv('GOOGLE_SERVICE_ACCOUNT_B64') or None
+GOOGLE_SHEETS_HISTORY_ID: str | None = os.getenv('GOOGLE_SHEETS_HISTORY_ID') or None
+
+
+def _optional_int(env_name: str) -> int | None:
+    """Parse an optional integer env var.
+
+    Args:
+        env_name: Environment variable name.
+
+    Returns:
+        Parsed int if the var is set and non-empty, else ``None``.
+
+    Raises:
+        ValueError: If the value is set but cannot be parsed as an int.
+    """
+    raw = os.getenv(env_name)
+    if raw is None or raw.strip() == '':
+        return None
+    return int(raw)
+
+
+GOOGLE_SHEETS_HISTORY_GID_TW: int | None = _optional_int('GOOGLE_SHEETS_HISTORY_GID_TW')
+GOOGLE_SHEETS_HISTORY_GID_US: int | None = _optional_int('GOOGLE_SHEETS_HISTORY_GID_US')
+ADMIN_TOKEN: str | None = os.getenv('ADMIN_TOKEN') or None
+
 
 def tw_stock_codes() -> list[str]:
     """Parse TW_STOCKS env var into a list of Taiwan stock codes.
