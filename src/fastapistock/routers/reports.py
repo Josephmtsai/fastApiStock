@@ -21,8 +21,7 @@ from fastapistock.schemas.common import ResponseEnvelope
 from fastapistock.services.report_service import (
     build_monthly_report,
     build_weekly_report,
-    send_monthly_report,
-    send_weekly_report,
+    run_report_pipeline,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ async def preview_weekly() -> ResponseEnvelope[dict[str, str]]:
         ResponseEnvelope carrying ``{'text': <MarkdownV2 body>}`` on success.
     """
     logger.info('Weekly report preview requested')
-    text = build_weekly_report(datetime.now(_TZ))
+    text, _ = build_weekly_report(datetime.now(_TZ))
     return ResponseEnvelope(status='success', data={'text': text})
 
 
@@ -60,7 +59,7 @@ async def preview_monthly() -> ResponseEnvelope[dict[str, str]]:
         ResponseEnvelope carrying ``{'text': <MarkdownV2 body>}`` on success.
     """
     logger.info('Monthly report preview requested')
-    text = build_monthly_report(datetime.now(_TZ))
+    text, _ = build_monthly_report(datetime.now(_TZ))
     return ResponseEnvelope(status='success', data={'text': text})
 
 
@@ -72,12 +71,13 @@ async def preview_monthly() -> ResponseEnvelope[dict[str, str]]:
 async def trigger_weekly_send() -> ResponseEnvelope[None]:
     """Render and send the weekly report to Telegram.
 
-    ``send_weekly_report`` never raises; any underlying error is logged and
-    surfaced via the log stream. The endpoint always returns success once the
-    dispatch attempt is scheduled.
+    Delegates to :func:`run_report_pipeline` (``trigger='manual'``) which
+    never raises; underlying errors surface only via the structured log
+    stream. The endpoint always returns success once the dispatch attempt
+    is scheduled.
     """
     logger.info('Weekly report dispatch requested')
-    send_weekly_report()
+    run_report_pipeline(report_type='weekly', trigger='manual')
     return ResponseEnvelope(status='success', message='weekly report dispatched')
 
 
@@ -89,10 +89,11 @@ async def trigger_weekly_send() -> ResponseEnvelope[None]:
 async def trigger_monthly_send() -> ResponseEnvelope[None]:
     """Render and send the monthly report to Telegram.
 
-    ``send_monthly_report`` never raises; any underlying error is logged and
-    surfaced via the log stream. The endpoint always returns success once the
-    dispatch attempt is scheduled.
+    Delegates to :func:`run_report_pipeline` (``trigger='manual'``) which
+    never raises; underlying errors surface only via the structured log
+    stream. The endpoint always returns success once the dispatch attempt
+    is scheduled.
     """
     logger.info('Monthly report dispatch requested')
-    send_monthly_report()
+    run_report_pipeline(report_type='monthly', trigger='manual')
     return ResponseEnvelope(status='success', message='monthly report dispatched')

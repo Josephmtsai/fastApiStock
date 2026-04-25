@@ -7,6 +7,7 @@ decide which market (if any) to push to Telegram.
 
 import logging
 from datetime import datetime
+from functools import partial
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -14,10 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from fastapistock.config import TELEGRAM_USER_ID, tw_stock_codes, us_stock_symbols
-from fastapistock.services.report_service import (
-    send_monthly_report,
-    send_weekly_report,
-)
+from fastapistock.services.report_service import run_report_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -149,14 +147,14 @@ def build_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
     scheduler.add_job(
-        send_weekly_report,
+        partial(run_report_pipeline, report_type='weekly', trigger='cron'),
         trigger=CronTrigger(day_of_week='sun', hour=21, minute=0, timezone=str(_TZ)),
         id='weekly_report',
         name='Weekly portfolio report',
         replace_existing=True,
     )
     scheduler.add_job(
-        send_monthly_report,
+        partial(run_report_pipeline, report_type='monthly', trigger='cron'),
         trigger=CronTrigger(day=1, hour=21, minute=0, timezone=str(_TZ)),
         id='monthly_report',
         name='Monthly portfolio report',

@@ -7,6 +7,8 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.orm import Session
+
 from fastapistock.repositories.portfolio_snapshot_repo import PortfolioSnapshot
 from fastapistock.repositories.signal_history_repo import SignalRecord
 from fastapistock.services.report_service import (
@@ -98,6 +100,8 @@ def _patch_repos(
             f'{_RS}.transactions_repo.sum_buy_amount',
             return_value=buy_amount,
         ),
+        patch(f'{_RS}.portfolio_repo.fetch_portfolio', return_value={}),
+        patch(f'{_RS}.portfolio_repo.fetch_portfolio_us', return_value={}),
     )
 
 
@@ -114,8 +118,10 @@ def test_build_weekly_report_happy_path() -> None:
         patches[5],
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        text = build_weekly_report(now)
+        text, _ = build_weekly_report(now)
 
     # title
     assert '週報' in text
@@ -144,8 +150,10 @@ def test_build_weekly_report_first_run_no_prev_snapshot() -> None:
         patches[5],
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        text = build_weekly_report(now)
+        text, _ = build_weekly_report(now)
 
     assert '首次執行' in text
 
@@ -162,8 +170,10 @@ def test_build_weekly_report_empty_signals() -> None:
         patches[5],
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        text = build_weekly_report(now)
+        text, _ = build_weekly_report(now)
 
     assert '無觸發加碼訊號' in text
 
@@ -187,8 +197,10 @@ def test_build_monthly_report_happy_path() -> None:
         patches[5],
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        text = build_monthly_report(now)
+        text, _ = build_monthly_report(now)
 
     assert '月報' in text
     # '2026-04' appears in the title but '-' is MarkdownV2-escaped
@@ -197,7 +209,9 @@ def test_build_monthly_report_happy_path() -> None:
     assert '本月定額達成' in text
 
 
-def test_build_monthly_report_saves_snapshot_for_prev_month() -> None:
+def test_build_monthly_report_saves_snapshot_for_prev_month(
+    db_session: Session,
+) -> None:
     now = datetime(2026, 5, 1, 21, 0, tzinfo=_TZ)
     patches = _patch_repos()
     save_monthly_patch = patches[5]
@@ -210,8 +224,22 @@ def test_build_monthly_report_saves_snapshot_for_prev_month() -> None:
         save_monthly_patch as mock_save,
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        build_monthly_report(now)
+        # build_monthly_report alone does not persist Redis snapshots; the
+        # pipeline owns that side effect now.  Drive it via the pipeline so
+        # the original assertion (snapshot anchored to last day of prev
+        # month) still has something to verify.
+        from fastapistock.services.report_service import run_report_pipeline
+
+        run_report_pipeline(
+            report_type='monthly',
+            trigger='cron',
+            skip_telegram=True,
+            skip_sheet=True,
+            now=now,
+        )
         assert mock_save.called
         args, _kwargs = mock_save.call_args
         snap = args[0]
@@ -232,8 +260,10 @@ def test_build_weekly_report_fetch_failure_shows_placeholder() -> None:
         patches[5],
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        text = build_weekly_report(now)
+        text, _ = build_weekly_report(now)
 
     assert '資料讀取失敗' in text
 
@@ -252,8 +282,10 @@ def test_build_weekly_report_us_pnl_label_is_twd_not_usd() -> None:
         patches[5],
         patches[6],
         patches[7],
+        patches[8],
+        patches[9],
     ):
-        text = build_weekly_report(now)
+        text, _ = build_weekly_report(now)
 
     # '美股' line and 當前總損益 tail must end with TWD, not USD.
     assert 'USD' not in text

@@ -605,7 +605,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         assert '120,000' in text
         # 120% > 100 → should show ✅
         assert '✅' in text
@@ -625,7 +625,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)  # should not raise
+            text, _ = build_weekly_report(now)  # should not raise
         assert '0%' in text  # pct falls back to 0 when target==0
 
     def test_tx_read_failure_shows_placeholder(self) -> None:
@@ -641,7 +641,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         assert '資料讀取失敗' in text
         # Other sections still there
         assert '週報' in text
@@ -659,7 +659,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         assert '資料讀取失敗' in text
         # Investment section unaffected
         assert '85,000' in text
@@ -685,7 +685,7 @@ class TestReportComposition:
             patch(f'{_RS}.transactions_repo.sum_buy_amount', return_value=0.0),
         )
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         assert '快照讀取失敗' in text
         assert '首次執行' not in text
 
@@ -704,7 +704,7 @@ class TestReportComposition:
             patch(f'{_RS}.transactions_repo.sum_buy_amount', return_value=0.0),
         )
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         assert '首次執行' in text
         assert '快照讀取失敗' not in text
 
@@ -728,7 +728,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         assert '首次執行' in text
         assert '無觸發加碼訊號' in text
         assert 'FastAPI Stock Bot' in text
@@ -839,7 +839,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         # Any dot literal outside code span should appear escaped as '\.'
         # Percentage formatting like '+4.7%' must have escaped dot.
         import re
@@ -863,7 +863,7 @@ class TestReportComposition:
             patches[6],
             patches[7],
         ):
-            text = build_weekly_report(now)
+            text, _ = build_weekly_report(now)
         # Title includes '2026-04-20 ~ 2026-04-26';
         # dashes must be escaped in MarkdownV2
         assert r'2026\-04\-20' in text
@@ -875,6 +875,11 @@ class TestReportComposition:
             pnl_us=7000.0,
             timestamp=datetime(2026, 3, 31, 21, 0, tzinfo=_TZ),
         )
+        # Phase 3 moved Redis snapshot persistence into the pipeline (so
+        # `dry_run` can opt out).  Drive the pipeline directly with both
+        # external sinks suppressed so the assertion holds.
+        from fastapistock.services.report_service import run_report_pipeline
+
         patches = self._patch_all(prev_snap=prev)
         with (
             patches[0],
@@ -885,8 +890,18 @@ class TestReportComposition:
             patches[5] as mock_save_m,
             patches[6],
             patches[7],
+            patch(f'{_RS}.report_history_repo.upsert_symbol_snapshots'),
+            patch(f'{_RS}.report_history_repo.upsert_report_summary'),
+            patch(f'{_RS}.sheet_writer.append_monthly_history', return_value=True),
+            patch(f'{_RS}._send_markdown', return_value=True),
         ):
-            build_monthly_report(now)
+            run_report_pipeline(
+                report_type='monthly',
+                trigger='cron',
+                skip_telegram=True,
+                skip_sheet=True,
+                now=now,
+            )
         assert mock_save_m.called
 
 

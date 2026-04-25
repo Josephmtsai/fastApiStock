@@ -4,6 +4,7 @@ Uses datetime objects directly (no freezegun needed) to test boundary cases.
 """
 
 from datetime import datetime
+from functools import partial
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -218,3 +219,42 @@ class TestBuildScheduler:
         jobs = scheduler.get_jobs()
         job_ids = {job.id for job in jobs}
         assert job_ids == {'stock_push', 'weekly_report', 'monthly_report'}
+
+    def test_weekly_job_calls_pipeline_with_weekly_cron(self) -> None:
+        """The weekly cron job must invoke run_report_pipeline with the correct args."""
+        with patch('fastapistock.scheduler.run_report_pipeline') as mock_pipeline:
+            scheduler = build_scheduler()
+            weekly_job = next(
+                j for j in scheduler.get_jobs() if j.id == 'weekly_report'
+            )
+            weekly_job.func()  # invoke the partial directly
+            mock_pipeline.assert_called_once_with(report_type='weekly', trigger='cron')
+
+    def test_monthly_job_calls_pipeline_with_monthly_cron(self) -> None:
+        """The monthly cron job must invoke run_report_pipeline with cron args."""
+        with patch('fastapistock.scheduler.run_report_pipeline') as mock_pipeline:
+            scheduler = build_scheduler()
+            monthly_job = next(
+                j for j in scheduler.get_jobs() if j.id == 'monthly_report'
+            )
+            monthly_job.func()
+            mock_pipeline.assert_called_once_with(report_type='monthly', trigger='cron')
+
+    def test_weekly_job_uses_partial_for_static_inspection(self) -> None:
+        """Use functools.partial so tests can inspect args without invocation."""
+        scheduler = build_scheduler()
+        weekly_job = next(j for j in scheduler.get_jobs() if j.id == 'weekly_report')
+        assert isinstance(weekly_job.func, partial)
+        assert weekly_job.func.keywords == {
+            'report_type': 'weekly',
+            'trigger': 'cron',
+        }
+
+    def test_monthly_job_uses_partial_for_static_inspection(self) -> None:
+        scheduler = build_scheduler()
+        monthly_job = next(j for j in scheduler.get_jobs() if j.id == 'monthly_report')
+        assert isinstance(monthly_job.func, partial)
+        assert monthly_job.func.keywords == {
+            'report_type': 'monthly',
+            'trigger': 'cron',
+        }
