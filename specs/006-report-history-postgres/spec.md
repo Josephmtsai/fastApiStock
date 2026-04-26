@@ -448,6 +448,202 @@ flowchart LR
 
 ---
 
+## 功能 G — Service Pipeline 整合（Phase 3 詳細設計）
+
+### G-1：設計目標
+
+把 Phase 2 的 repository 層 + 既有 `build_weekly_report()` / `build_monthly_report()` 串成一條**可重入、可單測、可手動觸發**的流水線。三個呼叫者（cron / 手動 trigger endpoint / 一次性 backfill 腳本）共用同一個 entry point：`run_report_pipeline()`。
+
+### G-2：`run_report_pipeline()` 簽名
+
+```python
+from datetime import datetime
+from dataclasses import dataclass
+from typing import Literal
+
+ReportType = Literal['weekly', 'monthly']
+Trigger = Literal['cron', 'manual', 'backfill']
+
+
+def run_report_pipeline(
+    *,
+    report_type: ReportType,
+    report_period: str | None = None,
+    trigger: Trigger = 'cron',
+    dry_run: bool = False,
+    skip_telegram: bool = False,
+    skip_sheet: bool = False,
+    now: datetime | None = None,
+) -> 'RunReportResult':
+    """Execute a single report build + persist + (optional) Telegram + Sheet flow."""
+```
+
+#### `report_period` 自動推算規則
+
+| `report_type` | `report_period=None` 時 | 對應 spec-005 既有 helper |
+|---------------|------------------------|--------------------------|
+| `'weekly'` | `_weekly_window(now).snapshot_id`（最近一個週日，例 `'2026-04-19'`） | `report_service._weekly_window` |
+| `'monthly'` | `_monthly_window(now).snapshot_id`（前一個月，例 `'2026-03'`） | `report_service._monthly_window` |
+
+顯式給定時須走 `^\d{4}-\d{2}(-\d{2})?$` 正則驗證，格式不符 → `ValueError`。
+
+### G-3：`RunReportResult` Dataclass
+
+```python
+@dataclass(frozen=True)
+class RunReportResult:
+    job_id: str                     # uuid.uuid4().hex[:8]
+    report_type: ReportType
+    report_period: str
+    trigger: Trigger
+    dry_run: bool
+    telegram_sent: bool
+    postgres_ok: bool
+    sheet_ok: bool | None           # 月報才有意義；週報 / dry_run / skip_sheet 為 None
+    symbol_rows_written: int
+    summary_written: bool
+    duration_ms: int
+    errors: list[str]
+```
+
+對齊 E-2 trigger response：`job_id` / `postgres_ok` / `sheet_ok` / `telegram_sent` / `symbol_rows_written` / `duration_ms` 完全沿用。
+
+### G-4：Pipeline 執行順序與失敗行為
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Caller as Caller (cron / endpoint / backfill)
+    participant Pipe as run_report_pipeline()
+    participant RS as report_service.build_*_report()
+    participant TG as Telegram API
+    participant PG as report_history_repo
+    participant SH as sheet_writer
+
+    Caller->>Pipe: report_type, report_period, flags
+    Note over Pipe: job_id = uuid4().hex[:8]<br/>logger = LoggerAdapter(extra={job_id, trigger})
+    Pipe->>Pipe: log 'report_history.build.start'
+
+    Pipe->>RS: build markdown + collect raw fetches
+    RS-->>Pipe: markdown_text, fetch_results
+
+    alt dry_run == True
+        Pipe->>Pipe: log 'report_history.build.dry_run_preview'
+        Pipe-->>Caller: RunReportResult(dry_run=True, all flags=False)
+    else normal flow
+
+        rect rgb(240, 250, 240)
+            Note over Pipe,TG: Step 1 — Telegram (skip if skip_telegram)
+            alt skip_telegram == False
+                Pipe->>TG: _send_markdown(markdown_text)
+                TG-->>Pipe: ok / fail
+            end
+            Note right of Pipe: Telegram 失敗也繼續走 Step 2/3
+        end
+
+        rect rgb(240, 245, 255)
+            Note over Pipe,PG: Step 2 — Postgres (Decimal conversion)
+            Pipe->>Pipe: _build_symbol_snapshots / _build_summary<br/>(此處 float→Decimal(str))
+            Pipe->>PG: upsert_symbol_snapshots(rows)
+            Pipe->>PG: upsert_report_summary(row)
+            Note right of Pipe: 任一 upsert raise → catch、postgres_ok=False<br/>仍進 Step 3
+        end
+
+        rect rgb(255, 250, 240)
+            Note over Pipe,SH: Step 3 — Sheet (monthly only, skip if weekly/skip_sheet)
+            alt report_type == 'monthly' AND not skip_sheet
+                Pipe->>SH: append_monthly_history('TW', tw_rows)
+                Pipe->>SH: append_monthly_history('US', us_rows)
+            else
+                Pipe->>Pipe: sheet_ok = None
+            end
+        end
+
+        Pipe->>Pipe: log 'report_history.build.done'
+        Pipe-->>Caller: RunReportResult(...)
+    end
+```
+
+#### 失敗行為總表
+
+| Step | 失敗時機 | 處理 | 影響後續 |
+|------|----------|------|---------|
+| Build markdown | `_safe_call` 內 fetch 失敗回 `None` | 繼續 | 不影響 |
+| Telegram send | `_send_markdown` catch httpx error 回 False | log warning，`telegram_sent=False` | **不影響** Postgres / Sheet |
+| Postgres upsert | `SQLAlchemyError` | catch、`postgres_ok=False`、`errors.append('SQLAlchemyError')` | **不影響** Sheet |
+| Sheet append | `sheet_writer` 內部已 catch 回 False | 讀回傳值 → `sheet_ok=False` | 流程結束 |
+
+**核心原則**：pipeline 主體**永不 raise**，所有錯誤透過 `RunReportResult.errors` 與 log 上報。
+
+### G-5：`job_id` 與 LoggerAdapter 規範
+
+| 規則 | 說明 |
+|------|------|
+| `job_id` 生成位置 | **`run_report_pipeline()` 函式頂端** |
+| 傳遞範圍 | 僅在 `services/report_service.py` 內部；**不下沉到 repository 層** |
+| Repository log | 維持獨立 namespace（`fastapistock.report_history.repo.*`），**不接收 `job_id`**；Railway dashboard 用時間範圍 + namespace grep 串連 |
+| `extra` 欄位 | 至少 `job_id`、`trigger`、`report_type`、`report_period` |
+
+#### Pipeline log 事件清單（補充 E-1）
+
+| 事件 | Level | 觸發時機 |
+|------|-------|----------|
+| `report_history.build.start` | INFO | pipeline 進入 |
+| `report_history.build.dry_run_preview` | INFO | dry_run 完成 build |
+| `report_history.build.telegram.skipped` | INFO | `skip_telegram=True` |
+| `report_history.build.telegram.ok` | INFO | Telegram 推送成功 |
+| `report_history.build.telegram.fail` | WARNING | Telegram 推送失敗 |
+| `report_history.build.postgres.fail` | ERROR | Postgres step catch |
+| `report_history.build.sheet.skipped` | INFO | 週報或 `skip_sheet=True` |
+| `report_history.build.done` | INFO | pipeline 結束 |
+
+### G-6：Decimal 轉換邊界
+
+**原則**：保留所有既有 repo / Redis 層的 `float`，僅在 `report_service.py` 進入 Postgres path 的**邊界**做 `Decimal(str(value))` 一次性轉換。
+
+#### 需要在 `report_service.py` 新增的轉換點
+
+| 位置 | 來源 | 目標 |
+|------|------|------|
+| `_build_symbol_snapshots()` | `PortfolioEntry.shares: int` / `avg_cost: float` / `unrealized_pnl: float` | `SymbolSnapshot.*: Decimal` |
+| 同上 | `current_price`：US 由 `us_stock_service.get_us_stocks()` 取，TW 由 `stock_service.get_rich_tw_stocks()` 取（**Phase 3 新引入的 cross-service dependency**） | `SymbolSnapshot.current_price: Decimal` |
+| 同上 | 計算 `market_value` / `pnl_pct` / `pnl_delta` | 全程 Decimal 算術 |
+| `_build_summary()` | `fetch_pnl_tw()` / `fetch_pnl_us()` 回 `float \| None` | `pnl_*_total: Decimal`（None 跳過寫入 + `errors.append('pnl_fetch_failed')`） |
+| 同上 | `transactions_repo.sum_buy_amount() -> float` | `buy_amount_twd: Decimal \| None` |
+| 同上 | `signal_history_repo.list_signals()` count → int | `signals_count: int` |
+| 同上 | `prev_snapshot.pnl_tw / pnl_us`（Redis 的 float） | 算 `pnl_*_delta` 用 |
+
+#### 禁止事項
+- **禁止** `Decimal(float_value)` 直轉（會引入 binary float 漂移）
+- **禁止**改 `portfolio_repo` / `transactions_repo` / `redis_cache` 回傳型別
+- **禁止**在 repository 層做 Decimal 轉換
+
+### G-7：對既有 cron job 的影響（scheduler.py）
+
+| 改動 | 細節 |
+|------|------|
+| 替換 cron callable | `send_weekly_report` → `lambda: run_report_pipeline(report_type='weekly', trigger='cron')`<br>`send_monthly_report` → `lambda: run_report_pipeline(report_type='monthly', trigger='cron')` |
+| `_scheduled_push` (interval 30min) | **不動**，與報告無關 |
+| `send_weekly_report` / `send_monthly_report` | **直接刪除**（已 grep 確認僅 scheduler 引用） |
+
+### G-8：與既有 `build_*_report()` 的關係
+
+**結論：包裝（wrap），不取代。**
+
+理由：build 函式仍負責「產出 MarkdownV2 + 持久化 Redis 上一期 snapshot」（spec-005 行為）。`run_report_pipeline()` 的職責是**編排**：呼叫 build → 推 Telegram → 組 SymbolSnapshot → 寫 Postgres → 寫 Sheet → 回傳 result。
+
+**重構**：把 `build_*_report` 內部「順手寫 Redis snapshot」抽成 `_persist_redis_snapshot()` helper，讓 pipeline 在 `dry_run` 時跳過。原 build 函式回傳改為 `(markdown_text, fetch_results)` tuple，避免 pipeline 重複抓資料。
+
+### G-9：Phase 3 不在範圍
+
+- ❌ Trigger endpoint `POST /reports/history/trigger`（Phase 5）
+- ❌ History query endpoints（Phase 4）
+- ❌ Telegram `/history` 互動（Phase 4）
+- ❌ Backfill script（Phase 6，但已設計成可呼叫 `run_report_pipeline(trigger='backfill')`）
+- ❌ 改 `portfolio_repo` / `transactions_repo` 為 Decimal（範圍過大）
+
+---
+
 ## 功能 E — 可觀測性與手動觸發 (Observability & Manual Trigger)
 
 ### E-1：結構化日誌規格
@@ -844,11 +1040,90 @@ ADMIN_TOKEN=
 7. `sheet_writer.py`（credentials loader + append by market）
 8. 單元測試（用 `testcontainers` 或 SQLite in-memory 替代）
 
-### Phase 3 — Service 整合
-9. `report_service` 寫入 DB（週報+月報皆寫）
-10. `report_service` 月報呼叫 `sheet_writer`
-11. `config.py` 加新環境變數
-12. `main.py` lifespan 驗證 DB 連線
+### Phase 3 — Service Pipeline 整合（詳細設計見功能 G）
+
+> 抽 `run_report_pipeline()` 統一 entry，整合 Telegram + Postgres + Sheet 三步驟。**Routers 不在 Phase 3 範圍**。
+
+#### Task 9 — `config.py` 新增環境變數
+- 檔案：`src/fastapistock/config.py`
+- 改動：新增 `DATABASE_URL` / `GOOGLE_SERVICE_ACCOUNT_JSON` / `GOOGLE_SERVICE_ACCOUNT_B64` / `GOOGLE_SHEETS_HISTORY_ID` / `GOOGLE_SHEETS_HISTORY_GID_TW` / `GOOGLE_SHEETS_HISTORY_GID_US` / `ADMIN_TOKEN` 讀取
+- 驗收：`tests/test_config.py` 覆蓋新欄位
+
+> **Phase 1 已完成**
+
+#### Task 10 — `main.py` lifespan DB 連線驗證
+- 檔案：`src/fastapistock/main.py`
+- 改動：lifespan startup 加 `engine.connect() + SELECT 1`，失敗 log ERROR 但**不 fail fast**
+- 驗收：`tests/test_main_lifespan.py` mock engine 驗證連線成功 / 失敗 log
+
+> **Phase 1 已完成**
+
+#### Task 11 — 抽出 `RunReportResult` dataclass
+- 檔案：`src/fastapistock/services/report_service.py`
+- 改動：新增 `RunReportResult` frozen dataclass + `ReportType` / `Trigger` Literal alias（簽名見 G-3）
+- 驗收：`from fastapistock.services.report_service import RunReportResult` 可正常 import
+
+#### Task 12 — 重構 `build_*_report()` 抽出 fetch results
+- 檔案：`src/fastapistock/services/report_service.py`
+- 改動：
+  1. 新增 private dataclass `_FetchResults`
+  2. 抽 `_collect_fetch_results(window, now) -> _FetchResults`
+  3. 抽 `_persist_redis_snapshot(window, fetch_results)`
+  4. 改 `_build_report(window, now)` 回傳為 `tuple[str, _FetchResults]`
+- 驗收：既有 `tests/test_report_service.py` 全綠；新測試驗證 `dry_run=True` 時 `_persist_redis_snapshot` 不被呼叫
+
+#### Task 13 — 新增 `_build_symbol_snapshots()` / `_build_summary()`
+- 檔案：`src/fastapistock/services/report_service.py`
+- 改動：兩個 private helper：
+  - `_build_symbol_snapshots(window, fetch_results, market) -> list[SymbolSnapshot]`：對 TW/US 分別組裝 per-symbol Decimal rows；**內含 `Decimal(str(...))` 轉換**；`current_price` 由 `stock_service` / `us_stock_service` 取得
+  - `_build_summary(window, fetch_results, snapshot_rows) -> ReportSummary`
+- 驗收：單測涵蓋（a）正常組裝全 Decimal、（b）`pnl_tw=None` → 跳過寫入 + `errors.append`、（c）空 portfolio → `[]`、（d）TW + US 混合
+
+#### Task 14 — `run_report_pipeline()` 主函式
+- 檔案：`src/fastapistock/services/report_service.py`
+- 改動：實作完整 pipeline（簽名見 G-2、流程見 G-4）：
+  - 頂端產 `job_id`、建 `LoggerAdapter`、log `build.start`
+  - 呼叫 `_collect_fetch_results` + `_build_report` 拿 markdown
+  - `dry_run` log preview 後 return
+  - Step 1 Telegram（含 `skip_telegram` 短路）
+  - Step 2 組 snapshot/summary → repo upsert（catch `SQLAlchemyError`）
+  - Step 3 月報 + 非 `skip_sheet` → sheet_writer
+  - 計算 `duration_ms`，log `build.done`，回 `RunReportResult`
+- 驗收：`tests/test_report_pipeline.py` 至少 12 個 case：
+  - dry_run 時三 step 都不被呼叫
+  - skip_telegram=True 時 Postgres 仍跑
+  - Postgres raise 時 Sheet 仍跑（月報）
+  - 週報情境 `sheet_ok=None`
+  - Telegram 失敗時其餘 step 不受影響
+  - `report_period=None` 自動填當期
+  - `report_period='2026-03'` 顯式指定
+  - `report_period='bad-format'` raise `ValueError`
+  - `errors` 在無錯時為空 list
+  - `LoggerAdapter` 注入 `job_id`
+  - Decimal 邊界：mock fetch float `0.1` → 傳給 repo 應為 `Decimal('0.1')`
+  - `trigger='backfill'` log extra 標籤正確
+
+#### Task 15 — `scheduler.py` 改用 `run_report_pipeline()`
+- 檔案：`src/fastapistock/scheduler.py`
+- 改動：移除 `send_*_report` import，改用 `run_report_pipeline`；**直接刪除** 原 `send_weekly_report` / `send_monthly_report`（grep 確認僅 scheduler 引用）
+- 驗收：`tests/test_scheduler.py` mock 驗證 `run_report_pipeline` 被以正確參數呼叫；既有排程時間不變
+
+#### Task 16 — Pipeline 整合測試
+- 檔案：`tests/test_report_pipeline_integration.py`（新檔）
+- 改動：SQLite in-memory + mock httpx + mock gspread 端到端：
+  - cron 呼 `run_report_pipeline('weekly', trigger='cron')` → 驗 Postgres 兩張表 + Redis snapshot + Telegram mock 各被呼叫
+  - 月報情境額外驗 sheet_writer.append_monthly_history 被呼叫 2 次（TW + US）
+- 驗收：兩個 e2e test 全綠；`report_service.py` 覆蓋率 ≥ 85%
+
+#### Phase 3 完成條件 (DoD)
+- [ ] `run_report_pipeline()` 簽名與 G-2 一致
+- [ ] `RunReportResult` 欄位齊全（G-3）
+- [ ] 三步驟順序與失敗行為符合 G-4
+- [ ] 結構化 log 含 `job_id` + `trigger`
+- [ ] Decimal 轉換僅在 `_build_*` 邊界，全為 `Decimal(str(...))`
+- [ ] `scheduler.py` 切換完成，原 `send_*_report` 已刪除
+- [ ] Pipeline 單測 + 整合測試全綠
+- [ ] `report_service.py` 覆蓋率 ≥ 85%
 
 ### Phase 4 — 查詢介面
 13. `GET /api/v1/reports/history` 主查詢 endpoint（含三種情境分支）
@@ -858,10 +1133,13 @@ ADMIN_TOKEN=
 17. 整合測試
 18. Railway 部署前置（Postgres plugin、環境變數填寫）
 
-### Phase 5 — 可觀測性與手動觸發
-19. `report_service` 內加結構化 log（`report_history.*` namespace + job_id）
-20. 抽出 `run_report_pipeline()` 統一介面供 cron / 手動共用
-21. `POST /api/v1/reports/history/trigger` endpoint（Bearer token 授權、dry_run 支援）
+### Phase 5 — 手動觸發 endpoint（Phase 3 完成後）
+
+> 結構化 log 與 `run_report_pipeline()` 已在 Phase 3 完成；本 Phase 只做 trigger endpoint 的 router 包裝。
+
+19. `POST /api/v1/reports/history/trigger` endpoint（Bearer token 授權、`dry_run` / `skip_*` 直通 `run_report_pipeline`）
+20. `tests/test_trigger_endpoint.py`（含未授權 401 / `ADMIN_TOKEN` 未設 503 / 正常 200 / `report_period` 格式錯誤 422）
+21. `.env.example` / `Procfile` 對應更新
 
 ### Phase 6 — 歷史 Backfill 一次性腳本（2026-01/02/03）
 22. `scripts/backfill_history.py` — CLI 參數解析 + log 設定
