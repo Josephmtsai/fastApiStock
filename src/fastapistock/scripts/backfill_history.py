@@ -723,50 +723,58 @@ def main(argv: list[str] | None = None) -> int:
             s.strip().upper() for s in args.symbols.split(',') if s.strip()
         }
 
-    markets: list[str]
-    if args.markets == 'BOTH':
-        markets = ['TW', 'US']
-    else:
-        markets = [args.markets]
-
     to_year, to_month = args.to_date if args.to_date else _prev_month_from_today()
 
     prev_tw_total: Decimal | None = None
     prev_us_total: Decimal | None = None
 
-    for market in markets:
-        if args.from_date:
-            from_year, from_month = args.from_date
-        else:
-            earliest = get_earliest_transaction_month(market)
-            if earliest is None:
-                logger.warning(
-                    'report_history.backfill.no_transactions',
-                    extra={'market': market},
-                )
-                continue
-            from_year, from_month = earliest
+    # Resolve which market(s) to run and the start month.
+    # When BOTH markets are requested they must run in a single _backfill_month
+    # call per period so the summary UPSERT captures TW + US together.
+    market_arg = args.markets  # 'TW' | 'US' | 'BOTH'
 
-        month_list = _month_range(from_year, from_month, to_year, to_month)
-        logger.info(
-            'report_history.backfill.market.start',
-            extra={'market': market, 'months': len(month_list)},
-        )
-
-        for year, month in month_list:
-            new_tw, new_us = _backfill_month(
-                market,
-                year,
-                month,
-                dry_run=args.dry_run,
-                skip_sheet=args.skip_sheet,
-                filter_symbols=filter_symbols,
-                verbose=args.verbose,
-                prev_tw_total=prev_tw_total,
-                prev_us_total=prev_us_total,
+    if args.from_date:
+        from_year, from_month = args.from_date
+    elif market_arg == 'BOTH':
+        tw_e = get_earliest_transaction_month('TW')
+        us_e = get_earliest_transaction_month('US')
+        candidates = [e for e in (tw_e, us_e) if e is not None]
+        if not candidates:
+            logger.warning(
+                'report_history.backfill.no_transactions', extra={'market': 'BOTH'}
             )
-            prev_tw_total = new_tw
-            prev_us_total = new_us
+            return 0
+        from_year, from_month = min(candidates)
+    else:
+        earliest = get_earliest_transaction_month(market_arg)
+        if earliest is None:
+            logger.warning(
+                'report_history.backfill.no_transactions',
+                extra={'market': market_arg},
+            )
+            return 0
+        from_year, from_month = earliest
+
+    month_list = _month_range(from_year, from_month, to_year, to_month)
+    logger.info(
+        'report_history.backfill.start_range',
+        extra={'market': market_arg, 'months': len(month_list)},
+    )
+
+    for year, month in month_list:
+        new_tw, new_us = _backfill_month(
+            market_arg,
+            year,
+            month,
+            dry_run=args.dry_run,
+            skip_sheet=args.skip_sheet,
+            filter_symbols=filter_symbols,
+            verbose=args.verbose,
+            prev_tw_total=prev_tw_total,
+            prev_us_total=prev_us_total,
+        )
+        prev_tw_total = new_tw
+        prev_us_total = new_us
 
     logger.info('report_history.backfill.done')
     return 0
