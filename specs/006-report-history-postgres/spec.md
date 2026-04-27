@@ -444,7 +444,7 @@ flowchart LR
 | 5 | Railway 方案 | Hobby $5/月，啟用 Postgres plugin 與自動備份 |
 | 6 | 套件組合 | `psycopg[binary]>=3.2` + `sqlalchemy>=2.0` + `alembic>=1.13` + `gspread>=6.0` |
 | 7 | Redis snapshot 處置 | **保留不動**，繼續做「上一期對比」的短期熱快取 |
-| 8 | Backfill | **不做**，從此刻累積；前 4 週 `pnl_delta` 可為 NULL |
+| 8 | Backfill | **限定範圍，獨立 script**：從各市場最早交易月起逐月回填到當期前一月（詳功能 F） |
 
 ---
 
@@ -776,20 +776,20 @@ ADMIN_TOKEN=
 
 ---
 
-## 功能 F — 一次性歷史 Backfill 腳本（2026-01 / 02 / 03）
+## 功能 F — 歷史 Backfill 腳本（從最早交易月起）
 
 ### F-1 目標
 
-部署後一次性把 2026 年 1、2、3 月的月度 snapshot 補進 DB，作為後續每月正式報告的 baseline。**只跑一次**。
+部署後一次性把 **TW + US 各自從最早交易月** 起、逐月回填到當期前一月的 monthly snapshot 補進 DB。TW 與 US 各自獨立按其交易紀錄最早月份起算（兩個市場的起點通常不同）。
 
 ### F-2 「跑一次」的執行方式
 
 採用**獨立 Python script** 放在 `scripts/backfill_history.py`，**不掛在 scheduler、不暴露為 HTTP endpoint**。執行採 **Railway CLI `railway run`**（在本機終端執行，但 Railway 環境變數自動注入，連到 Railway Postgres）。
 
 #### 為什麼不掛在 endpoint
-- 一次性任務，不應與 production 端點共存（避免誤觸發）
-- 跑時會打 yfinance 歷史 API 數十次，需要 random delay 1-2 秒，HTTP 端點 timeout 會中斷
-- 跑完用 `git rm` 移除腳本即可，spec 的 phase 6 完成後刪除 task
+- 長任務（9-10 分鐘），HTTP 端點 timeout 會中斷
+- 跑時會打 yfinance 歷史 API 數百次，需要 random delay 1-2 秒
+- Trigger endpoint 故意不接 backfill 任務（避免誤觸發）
 
 #### 執行步驟（Railway CLI）
 
@@ -804,37 +804,56 @@ railway login
 # 在本專案根目錄執行，連結 Railway project
 railway link
 
-# Step 1: dry-run 確認重建邏輯（不寫 DB / Sheet）
+# Step 1: dry-run 確認 earliest detect 與重建邏輯（不寫 DB / Sheet）
 railway run python -m fastapistock.scripts.backfill_history \
-  --months 2026-01,2026-02,2026-03 \
   --markets TW,US \
   --dry-run \
   --verbose
 
-# Step 2: 看 log 確認每月 symbols / shares / pnl 數字合理
+# Step 2: 看 log 確認 earliest month + 每月 symbols / shares / pnl 數字合理
 
-# Step 3: 真實寫入
+# Step 3: 真實寫入（一次跑完整範圍）
 railway run python -m fastapistock.scripts.backfill_history \
-  --months 2026-01,2026-02,2026-03 \
   --markets TW,US
+
+# Step 3 替代方案：分批執行（建議每年一批）
+railway run python -m fastapistock.scripts.backfill_history \
+  --markets TW --from 2023-06 --to 2023-12
+
+railway run python -m fastapistock.scripts.backfill_history \
+  --markets TW --from 2024-01 --to 2024-12
+
+# 分批跑完後執行 delta 修復（一次性校準 pnl_*_delta）
+railway run python -m fastapistock.scripts.backfill_history \
+  --repair-deltas
 
 # Step 4: 驗證
 curl https://你的-app.up.railway.app/api/v1/reports/history/options \
   | jq '.data.periods.monthly'
-# 應包含 ["2026-01", "2026-02", "2026-03"]
+# 應包含完整月份序列
 ```
 
 #### `railway run` 的運作原理
 - script 在**本機 venv** 執行（用本機 git 最新 code）
-- Railway 把 production 環境變數（`DATABASE_URL` / `GOOGLE_SERVICE_ACCOUNT_*` 等）**注入到本機 shell**
+- Railway 把 production 環境變數（`DATABASE_URL` / `GOOGLE_SERVICE_ACCOUNT_*` / `GOOGLE_SHEETS_US_TRANSACTIONS_GID` 等）**注入到本機 shell**
 - 連線走公網到 Railway Postgres（有 100-300ms 延遲，但對一次性任務無感）
 - 本機 terminal 不關 = 任務不中斷
+
+### F-2.5 前置條件
+
+**本 spec 需要 US transactions repo 才能完整執行**：
+
+- `transactions_repo.fetch_us_transactions()` 為新增 helper（讀 `GOOGLE_SHEETS_US_TRANSACTIONS_GID` tab）
+- US sheet 欄位（使用者確認）：`Date | Ticker | Action Type | Price | Shares | Net Cash Flow | Current Stock Price`
+- 若該 helper 在執行 backfill 時尚未實作 → US 部分**整體跳過 + log warning**（決策 7），TW 部分照常進行
 
 ### F-3 持倉重建邏輯
 
 ```
-給定 month_end_date (例: 2026-01-31)：
-  1. 從 transactions_repo 抓所有交易，filter date <= month_end_date
+給定 (market, month_end_date) (例: TW, 2025-08-31)：
+  1. 從對應的 transactions repo 抓所有交易，filter date <= month_end_date
+     - market='TW' → fetch_tw_transactions()
+     - market='US' → fetch_us_transactions()
   2. 按 symbol group，依時序累積：
      - 買入：shares += qty；avg_cost = weighted average
      - 賣出：shares -= qty；avg_cost 不變（簡化：不做 FIFO）
@@ -844,16 +863,40 @@ curl https://你的-app.up.railway.app/api/v1/reports/history/options \
      - 計算 market_value = shares * close_price
      - 計算 unrealized_pnl = (close_price - avg_cost) * shares
      - 計算 pnl_pct = unrealized_pnl / (avg_cost * shares) * 100
-  5. UPSERT 到 portfolio_symbol_snapshots（report_type='monthly', report_period='2026-01' 等）
+  5. UPSERT 到 portfolio_symbol_snapshots（report_type='monthly', report_period='YYYY-MM'）
   6. 彙總當月 summary 寫入 portfolio_report_summary
 ```
 
+**TW 與 US 各自獨立**：TW 從 TW earliest month 起、US 從 US earliest month 起；兩者每月 snapshot 各自按該市場有持倉的 symbol 寫入。
+
+### F-3.5 Earliest Month Detection
+
+新增 repo helper：
+```python
+# transactions_repo.py
+def get_earliest_transaction_month(market: str) -> tuple[int, int] | None:
+    """Return (year, month) of earliest transaction for the given market, or None.
+
+    Reads the corresponding sheet (TW or US), parses date column, returns min.
+    Cache result in Redis with key 'transactions:earliest:{market}' TTL=3600s.
+    """
+```
+
+**處理規則**：
+- TW: 從 `fetch_tw_transactions()` 抓最早 date
+- US: 從 `fetch_us_transactions()` 抓最早 date
+- 抓不到（sheet 空 / 連線失敗 / helper 未實作）→ **該市場跳過 + log warning**（決策 7）；不 abort 全部 backfill
+- 結果加 Redis cache TTL=3600（同一 backfill 過程中可能多次呼叫）
+
 ### F-4 月底日期定義
 
-| 月份 | month_end_date | 備註 |
-|------|---------------|------|
-| 2026-01 | 2026-01-31（六） | yfinance 自動回 2026-01-30（五）收盤價 |
-| 2026-02 | 2026-02-28（六） | yfinance 自動回 2026-02-27（五）收盤價 |
+通用算法：給定 `(year, month)`，`month_end_date = calendar.monthrange(year, month)[1]` 取該月最後一日。
+
+| 範例 | month_end_date | yfinance 行為 |
+|------|---------------|---------------|
+| 2023-12 | 2023-12-31（日） | 自動回 2023-12-29（五）收盤價 |
+| 2024-02 | 2024-02-29（四，閏年） | 直接使用 |
+| 2024-06 | 2024-06-30（日） | 自動回 2024-06-28（五）收盤價 |
 | 2026-03 | 2026-03-31（二） | 直接使用 |
 
 實作上呼叫 `ticker.history(start=month_end, end=month_end + 5days)` 取第一筆有效收盤價。
@@ -862,31 +905,60 @@ curl https://你的-app.up.railway.app/api/v1/reports/history/options \
 
 - **TW 股票**：`yfinance.Ticker(f'{symbol}.TW')` 或 `.TWO`
 - **US 股票**：`yfinance.Ticker(symbol)`
-- 每支 symbol × 每月 = 一次 API 呼叫；TW 之間加 `random.uniform(1.0, 2.5)` 秒延遲
-- 估算成本：假設 TW 10 檔 + US 5 檔 = 15 symbols × 3 months = 45 calls，台股延遲下總計約 60-90 秒
+- 每支 symbol × 每月 = 一次 API 呼叫
+- TW 之間加 `random.uniform(1.0, 2.5)` 秒延遲；US 加 `random.uniform(0.1, 0.3)` 秒（保險）
 
-### F-6 pnl_delta 計算順序
+#### 預估執行時間（給定假設）
 
-腳本必須**按月份順序執行**才能正確算 delta：
+假設 TW 最早 2023-06、US 最早 2024-03、跑到 2026-03（當期前一月）、平均 TW 持倉 8 檔、US 5 檔：
 
-| month | pnl_delta 計算 |
-|-------|---------------|
-| 2026-01 | NULL（首月無前期） |
-| 2026-02 | 02 月 PnL − 01 月 PnL |
-| 2026-03 | 03 月 PnL − 02 月 PnL |
+| 項目 | 計算 | 估時 |
+|------|------|------|
+| TW yfinance | 34 個月 × 8 檔 × 1.75s | ≈ 8 分鐘 |
+| US yfinance | 25 個月 × 5 檔 × 0.2s | ≈ 25 秒 |
+| Postgres UPSERT | 約 (272 + 125) symbol rows + 59 summary rows | ≈ 1 秒 |
+| Sheet append | 59 個月 × 0.5s | ≈ 30 秒 |
+| **總計** | | **≈ 9-10 分鐘** |
 
-腳本內部對 `--months` 參數先 sort，依序寫入。
+### F-6 pnl_delta 計算策略
+
+**模式 1：一次跑完整範圍**（單一 invocation 涵蓋所有月份）
+
+腳本內部用記憶體中的「上一月 PnL」累積：
+```
+prev_tw_total = None; prev_us_total = None
+for month in sorted(months_to_process):
+    curr = build_summary(month)
+    curr.pnl_tw_delta = curr.pnl_tw_total - prev_tw_total if prev_tw_total else None
+    curr.pnl_us_delta = curr.pnl_us_total - prev_us_total if prev_us_total else None
+    upsert(curr)
+    prev_tw_total = curr.pnl_tw_total; prev_us_total = curr.pnl_us_total
+```
+
+**模式 2：分批執行 + `--repair-deltas`**
+
+分批跑（如分年分批）時，每批的第一個月會錯把 delta 設成 NULL（誤以為是首月）。跑完所有批次後執行：
+
+```bash
+railway run python -m fastapistock.scripts.backfill_history --repair-deltas
+```
+
+`--repair-deltas` 行為：
+- **不重抓 yfinance 歷史價**，只重算 delta
+- SELECT 所有 monthly summary 按 `report_period` 升序
+- 從第二筆起 UPDATE `pnl_*_delta = current - previous`
+- 第一筆強制設為 NULL
 
 ### F-7 Summary 表填充
 
 | 欄位 | 來源 |
 |------|------|
 | `pnl_tw_total` / `pnl_us_total` | 該月 TW / US 個股 unrealized_pnl 加總 |
-| `pnl_tw_delta` / `pnl_us_delta` | 與前一月差值（首月 NULL） |
-| `buy_amount_twd` | `transactions_repo.sum_buy_amount(year, month)` 該月買入金額 |
+| `pnl_tw_delta` / `pnl_us_delta` | 與前一月差值（首月 NULL；分批跑用 `--repair-deltas` 校準） |
+| `buy_amount_twd` | `transactions_repo.sum_buy_amount(year, month)`；filter 整份 sheet，**適用所有歷史月份不受限** |
 | `signals_count` | **固定 0**（歷史訊號無法重建） |
-| `symbols_count` | 該月有持倉的 symbol 數量 |
-| `captured_at` | month_end_date 的 21:00 +08:00（模擬正常 schedule 時間） |
+| `symbols_count` | 該月有持倉的 symbol 數量（TW + US 加總） |
+| `captured_at` | `datetime(year, month, last_day, 21, 0, tzinfo=Asia/Taipei)`（決策 6：模擬正常 schedule 時間，與未來 cron 對齊） |
 
 ### F-8 假設、限制與已知偏差
 
@@ -899,15 +971,24 @@ curl https://你的-app.up.railway.app/api/v1/reports/history/options \
 5. **不處理已賣光部位**：歷史 snapshot 不會包含當月已清倉的 symbol
 6. **歷史訊號無法重建**：`signals_count` 一律為 0
 7. **yfinance 歷史價有 lag**：尾盤大跌等盤後事件可能不反映
+8. **已下市股票 / yfinance 抓不到**：跳過該 symbol + log warning（不 abort 整月）
+9. **跨年早期 yfinance 資料缺失**（如台股 2010 年前部分股票）：跳過該 symbol-month + log warning
+10. **PnL 算法不一致警語**（決策 5）：
+    - **歷史段（backfill）**：`pnl_tw_total = sum(個股 unrealized_pnl)`
+    - **未來段（cron）**：`pnl_tw_total = Google Sheet I19 / H21 cell`（試算表公式可能含當日股息調整、匯率等）
+    - 兩者算法不同，視覺化曲線可能在歷史/未來邊界看到 small offset
+    - **此為已知限制**，spec-006 不在範圍內統一兩種算法
 
 ### F-9 腳本介面與 CLI 參數
 
 ```
 usage: backfill_history.py [-h]
-  --months MONTHS              # 必填，逗號分隔 YYYY-MM
-  [--markets {TW,US,BOTH}]     # 預設 BOTH
-  [--dry-run]                  # 只 build 不寫 DB
-  [--skip-sheet]               # 不 append Sheet
+  [--markets {TW,US,BOTH}]      # 預設 BOTH
+  [--from YYYY-MM]              # 可選；預設 = 各市場 earliest detect
+  [--to YYYY-MM]                # 可選；預設 = 當期前一月
+  [--repair-deltas]             # 互斥於 --from/--to/--dry-run，只重算 pnl_*_delta
+  [--dry-run]                   # 只 build 不寫 DB / Sheet
+  [--skip-sheet]                # 預設 False（決策 4）；只 DB 寫，不 append Sheet
   [--symbols SYMBOLS]           # 可選，限定 symbols（debug 用）
   [--verbose]                   # log level DEBUG
 ```
@@ -918,10 +999,40 @@ usage: backfill_history.py [-h]
 
 完整指令見 F-2「執行步驟」。簡述：
 
-1. `railway run ... --dry-run --verbose` 看 log 確認重建邏輯
-2. `railway run ...`（不帶 --dry-run）寫入
-3. `curl /api/v1/reports/history/options` 確認 `periods.monthly` 含 `["2026-01", "2026-02", "2026-03"]`
-4. `curl /api/v1/reports/history?report_type=monthly` 確認三筆 summary 且 `pnl_delta` 從 2026-02 起有值
+1. **`railway run ... --dry-run --verbose`** 看 log 確認 earliest detect 與重建邏輯
+2. **真實寫入**（單批或分批，視月份多寡）
+3. 若分批跑：**`railway run ... --repair-deltas`** 校準 delta
+4. **`curl /api/v1/reports/history/options`** 確認 `periods.monthly` 包含完整月份序列
+5. **`curl /api/v1/reports/history?report_type=monthly`** 確認 summary 數量正確且 `pnl_delta` 從第 2 筆起有值
+
+### F-11 中斷恢復與分批策略
+
+**冪等保證**：UPSERT 確保重跑同月不會產生重複 row（依 `(report_type, report_period, market, symbol)` UNIQUE）。
+
+**建議分批策略**（特別適用月份 > 24 的情境）：
+
+```bash
+# 第一批：2023 年 TW
+railway run python -m fastapistock.scripts.backfill_history \
+  --markets TW --from 2023-06 --to 2023-12
+
+# 第二批：2024 年（TW + US 都已有資料）
+railway run python -m fastapistock.scripts.backfill_history \
+  --markets TW,US --from 2024-01 --to 2024-12
+
+# 第三批：2025 年
+railway run python -m fastapistock.scripts.backfill_history \
+  --markets TW,US --from 2025-01 --to 2025-12
+
+# 第四批：2026 年到當期前一月
+railway run python -m fastapistock.scripts.backfill_history \
+  --markets TW,US --from 2026-01 --to 2026-03
+
+# 收尾：校準所有月份的 delta
+railway run python -m fastapistock.scripts.backfill_history --repair-deltas
+```
+
+**中斷恢復**：任一批次中斷後，重跑整批即可（UPSERT 冪等）。delta 由最後的 `--repair-deltas` 統一校準。
 
 ---
 
@@ -941,8 +1052,7 @@ usage: backfill_history.py [-h]
 
 ## 不在範圍 (Out of Scope)
 
-- ❌ ~~歷史回填~~ → **改為功能 F**：限定 2026-01/02/03 三個月，一次性 script
-- ❌ 多年度歷史回填（>3 個月或跨年） — 仍不在範圍
+- ❌ ~~歷史回填~~ → **改為功能 F**：從各市場最早交易月起逐月回填，一次性 script
 - ❌ 自動 retention / 清理舊資料 — 永久保存
 - ❌ 前端圖表 UI — API 已提供 JSON，前端為另一個 spec
 - ❌ 實現損益（realized_pnl）— 本 spec 只記未實現
@@ -950,6 +1060,7 @@ usage: backfill_history.py [-h]
 - ❌ 股票分割（split）調整 — 經歷 split 的部位 backfill 會有誤差
 - ❌ 週報寫 Google Sheet — 只月報寫
 - ❌ 歷史訊號（signal）回填 — `signals_count` 一律為 0
+- ❌ Trigger endpoint 故意不接 backfill 任務 — 避免使用者誤觸發長任務（9-10 分鐘級別），backfill 只走獨立 script
 
 ---
 
@@ -983,6 +1094,10 @@ usage: backfill_history.py [-h]
 - `src/fastapistock/config.py`
   - 新增 `DATABASE_URL`、`GOOGLE_SERVICE_ACCOUNT_JSON`、`GOOGLE_SERVICE_ACCOUNT_B64`
   - 新增 `GOOGLE_SHEETS_HISTORY_ID`、`GOOGLE_SHEETS_HISTORY_GID_TW`、`GOOGLE_SHEETS_HISTORY_GID_US`
+- `src/fastapistock/repositories/transactions_repo.py`（Phase 6 觸發）
+  - 新增 `fetch_us_transactions()` 讀 `GOOGLE_SHEETS_US_TRANSACTIONS_GID`（先前為保留變數）
+    - 欄位：`Date | Ticker | Action Type | Price | Shares | Net Cash Flow | Current Stock Price`
+  - 新增 `get_earliest_transaction_month(market: str) -> tuple[int, int] | None`，Redis cache TTL=3600
 - `src/fastapistock/services/report_service.py`
   - `build_weekly_report()` / `build_monthly_report()` 收尾處新增 DB upsert
   - `build_monthly_report()` 另外呼叫 `sheet_writer.append_monthly_history()`
@@ -1141,13 +1256,20 @@ ADMIN_TOKEN=
 20. `tests/test_trigger_endpoint.py`（含未授權 401 / `ADMIN_TOKEN` 未設 503 / 正常 200 / `report_period` 格式錯誤 422）
 21. `.env.example` / `Procfile` 對應更新
 
-### Phase 6 — 歷史 Backfill 一次性腳本（2026-01/02/03）
-22. `scripts/backfill_history.py` — CLI 參數解析 + log 設定
-23. 月底持倉重建邏輯（依時序累積 transactions、計算 weighted avg_cost）
-24. yfinance 歷史價抓取（含 TW random delay 1-2.5s）
-25. summary 表彙總計算（pnl_delta 依月份順序）
-26. 執行 dry-run → 確認 → 真實寫入；驗證 `/options` 回傳 3 個 period
-27. 確認無誤後 `git rm` 移除腳本（保留 spec 紀錄即可）
+### Phase 6 — 歷史 Backfill 一次性腳本（從最早交易月起）
+22. `scripts/backfill_history.py` — CLI 參數解析（`--from/--to/--repair-deltas/--markets/--dry-run/--skip-sheet/--symbols/--verbose`）+ log 設定（log namespace `report_history.*` + `trigger='backfill'`）
+23. `transactions_repo` 新增 `fetch_us_transactions()` + `get_earliest_transaction_month(market)`
+    - US sheet 欄位：`Date | Ticker | Action Type | Price | Shares | Net Cash Flow | Current Stock Price`
+    - GID 從 `GOOGLE_SHEETS_US_TRANSACTIONS_GID` env 讀
+    - earliest detect 抓不到 → 該市場跳過 + log warning
+24. 月底持倉重建邏輯（依時序累積 transactions、計算 weighted avg_cost）— TW + US 各自獨立
+25. yfinance 歷史價抓取（含 TW random delay 1-2.5s、US 0.1-0.3s；下市股票跳過 + warning）
+26. summary 表彙總計算
+    - 模式 1：一次跑用記憶體累積 prev PnL
+    - 模式 2：`--repair-deltas` 子命令重算 delta（不重抓 yfinance）
+27. 執行 dry-run → 看 earliest detect 與重建邏輯 → 真實寫入（單批或分批）→（分批時）`--repair-deltas`
+28. `tests/test_backfill_history.py`（mock yfinance + transactions repo，驗 earliest detection、跨月累積、delta 計算、跳過邏輯、`--repair-deltas`）
+29. 驗證 `/options` 回傳完整月份序列；確認無誤後 `git rm scripts/backfill_history.py` 移除腳本（保留 spec 紀錄）
 
 每個 phase 獨立可驗證。Phase 1 通過後 Phase 2 可平行進行 repository 與 sheet_writer。
 
