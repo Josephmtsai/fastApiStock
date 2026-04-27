@@ -24,6 +24,28 @@ _session_factory: sessionmaker[Session] | None = None
 _lock = Lock()
 
 
+def _normalise_url(url: str) -> str:
+    """Rewrite a plain ``postgresql://`` URL to use the psycopg3 dialect.
+
+    Railway (and most PaaS providers) emit ``postgresql://`` URLs. SQLAlchemy
+    resolves that to the psycopg2 driver, which is not installed. Swap the
+    scheme to ``postgresql+psycopg`` so SA picks up the installed psycopg v3
+    driver instead. ``postgresql+psycopg://`` and ``postgresql+psycopg2://``
+    are left unchanged.
+
+    Args:
+        url: Raw DATABASE_URL string.
+
+    Returns:
+        URL with the correct psycopg3 dialect prefix.
+    """
+    if url.startswith('postgres://'):
+        url = 'postgresql' + url[len('postgres') :]
+    if url.startswith('postgresql://'):
+        url = 'postgresql+psycopg' + url[len('postgresql') :]
+    return url
+
+
 def _build_engine(url: str) -> Engine:
     """Create a configured SQLAlchemy engine.
 
@@ -34,7 +56,7 @@ def _build_engine(url: str) -> Engine:
         Engine with connection pool tuned for a small FastAPI deployment.
     """
     return create_engine(
-        url,
+        _normalise_url(url),
         pool_pre_ping=True,
         pool_size=_POOL_SIZE,
         max_overflow=_MAX_OVERFLOW,
