@@ -388,7 +388,12 @@ def format_rich_stock_message(
     return '\n'.join(lines)
 
 
-def reply_to_chat(chat_id: str, text: str) -> bool:
+def reply_to_chat(
+    chat_id: str,
+    text: str,
+    *,
+    reply_markup: dict[str, object] | None = None,
+) -> bool:
     """Send a plain-text reply to a Telegram chat.
 
     Used by the webhook router to respond to user commands.
@@ -397,6 +402,8 @@ def reply_to_chat(chat_id: str, text: str) -> bool:
     Args:
         chat_id: Telegram chat ID to reply to.
         text: Plain-text message content (no parse_mode).
+        reply_markup: Optional Telegram reply markup payload (e.g. an
+            ``inline_keyboard``). When supplied it is forwarded verbatim.
 
     Returns:
         True if the message was delivered successfully, False otherwise.
@@ -406,7 +413,9 @@ def reply_to_chat(chat_id: str, text: str) -> bool:
         return False
 
     url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/sendMessage'
-    payload = {'chat_id': chat_id, 'text': text}
+    payload: dict[str, object] = {'chat_id': chat_id, 'text': text}
+    if reply_markup is not None:
+        payload['reply_markup'] = reply_markup
 
     try:
         response = httpx.post(url, json=payload, timeout=_REQUEST_TIMEOUT)
@@ -423,6 +432,101 @@ def reply_to_chat(chat_id: str, text: str) -> bool:
         return False
     except httpx.RequestError as exc:
         logger.error('Telegram request failed for chat_id=%s: %s', chat_id, exc)
+        return False
+
+
+def edit_message_text(
+    *,
+    chat_id: int | str,
+    message_id: int,
+    text: str,
+    reply_markup: dict[str, object] | None = None,
+) -> bool:
+    """Edit a previously-sent Telegram message in place.
+
+    Used by the inline-keyboard ``/history`` flow to mutate the same chat
+    bubble across selections instead of spamming new messages. Falls back
+    silently on error; callers always return HTTP 200 to Telegram.
+
+    Args:
+        chat_id: Telegram chat ID containing the message.
+        message_id: ID of the message to edit.
+        text: New plain-text body (no parse_mode applied).
+        reply_markup: Optional new ``inline_keyboard`` payload; pass ``None``
+            to clear the keyboard.
+
+    Returns:
+        ``True`` on a 2xx response from Telegram, ``False`` otherwise.
+    """
+    if not TELEGRAM_TOKEN:
+        logger.error('TELEGRAM_TOKEN is not configured')
+        return False
+
+    url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/editMessageText'
+    payload: dict[str, object] = {
+        'chat_id': chat_id,
+        'message_id': message_id,
+        'text': text,
+    }
+    if reply_markup is not None:
+        payload['reply_markup'] = reply_markup
+
+    try:
+        response = httpx.post(url, json=payload, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        logger.info(
+            'Telegram editMessageText sent to chat_id=%s message_id=%s',
+            chat_id,
+            message_id,
+        )
+        return True
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            'Telegram editMessageText error for chat_id=%s: %s %s',
+            chat_id,
+            exc.response.status_code,
+            exc.response.text,
+        )
+        return False
+    except httpx.RequestError as exc:
+        logger.error(
+            'Telegram editMessageText request failed for chat_id=%s: %s',
+            chat_id,
+            exc,
+        )
+        return False
+
+
+def answer_callback_query(callback_query_id: str, text: str = '') -> bool:
+    """Acknowledge a Telegram callback query (clears the loading spinner).
+
+    Args:
+        callback_query_id: ID of the callback query to answer.
+        text: Optional toast text to flash to the user.
+
+    Returns:
+        ``True`` on success; ``False`` on any HTTP/transport failure.
+    """
+    if not TELEGRAM_TOKEN:
+        logger.error('TELEGRAM_TOKEN is not configured')
+        return False
+    url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/answerCallbackQuery'
+    payload: dict[str, object] = {'callback_query_id': callback_query_id}
+    if text:
+        payload['text'] = text
+    try:
+        response = httpx.post(url, json=payload, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return True
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            'Telegram answerCallbackQuery error: %s %s',
+            exc.response.status_code,
+            exc.response.text,
+        )
+        return False
+    except httpx.RequestError as exc:
+        logger.warning('Telegram answerCallbackQuery transport failed: %s', exc)
         return False
 
 

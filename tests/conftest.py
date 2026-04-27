@@ -56,12 +56,16 @@ def db_session(
     ``get_engine``/``get_session_factory`` helpers are overridden so a
     previously-initialised production engine cannot leak in.
     """
+    from sqlalchemy.pool import StaticPool
+
     import fastapistock.db.engine as db_engine
     from fastapistock.db.models import Base
 
     engine = create_engine(
         'sqlite+pysqlite:///:memory:',
         future=True,
+        connect_args={'check_same_thread': False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)

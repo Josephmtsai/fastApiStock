@@ -17,6 +17,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapistock import config
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.common import ResponseEnvelope
+from fastapistock.services import history_handler
 from fastapistock.services.telegram_service import (
     format_rich_stock_message,
     reply_to_chat,
@@ -59,11 +60,23 @@ class TelegramMessage(BaseModel):
     model_config = {'populate_by_name': True}
 
 
+class TelegramCallbackQuery(BaseModel):
+    """A Telegram inline-keyboard callback query payload."""
+
+    id: str
+    from_: TelegramFrom | None = Field(default=None, alias='from')
+    message: TelegramMessage | None = None
+    data: str | None = None
+
+    model_config = {'populate_by_name': True}
+
+
 class TelegramUpdate(BaseModel):
     """Top-level Telegram Bot API Update object."""
 
     update_id: int
     message: TelegramMessage | None = None
+    callback_query: TelegramCallbackQuery | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +134,7 @@ _HELP_TEXT = (
     '/pnl — 投資組合未實現損益（台股＋美股）\n'
     '/us AAPL,TSLA — 美股即時報價\n'
     '/tw 0050,2330 — 台股即時報價\n'
+    '/history — 查詢歷史報告（互動選單）\n'
     '/help — 顯示此說明'
 )
 
@@ -211,6 +225,70 @@ def _handle_tw(args: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _is_authorized(sender: TelegramFrom | None) -> bool:
+    """Return ``True`` when the caller matches the configured user whitelist."""
+    authorized_id = config.TELEGRAM_USER_ID
+    if not authorized_id:
+        return False
+    sender_id = getattr(sender, 'id', None)
+    return str(sender_id) == authorized_id
+
+
+def _dispatch_message(msg: TelegramMessage) -> None:
+    """Run a recognised command and reply via the Telegram API.
+
+    Args:
+        msg: Authorised, text-bearing Telegram message.
+    """
+    cmd, args = _parse_command(msg.text or '')
+    chat_id = str(msg.chat.id)
+
+    if cmd == '/q':
+        reply = _handle_q()
+    elif cmd == '/pnl':
+        from fastapistock.services.portfolio_service import get_pnl_reply
+
+        reply = get_pnl_reply()
+    elif cmd == '/us':
+        reply = _handle_us(args)
+    elif cmd == '/tw':
+        reply = _handle_tw(args)
+    elif cmd == '/history':
+        # /history has its own internal Telegram interactions
+        # (text reply OR inline keyboard), so we delegate fully.
+        history_handler.handle_text_command(chat_id=chat_id, args=args)
+        return
+    elif cmd == '/help':
+        reply = _HELP_TEXT
+    else:
+        # Unrecognized — silently ignore
+        return
+
+    reply_to_chat(chat_id, reply)
+
+
+def _dispatch_callback(callback_query: TelegramCallbackQuery) -> None:
+    """Route a Telegram ``callback_query`` to the history handler.
+
+    Anything that is not a ``hist:*`` payload is ignored with a warning so
+    other future inline flows can be added without changing this function.
+    """
+    data = callback_query.data or ''
+    if not data.startswith(history_handler.CALLBACK_PREFIX):
+        logger.warning('Ignoring unknown callback_data=%r', data)
+        return
+    msg = callback_query.message
+    if msg is None:
+        logger.warning('callback_query missing message — cannot edit reply')
+        return
+    history_handler.handle_callback(
+        chat_id=msg.chat.id,
+        message_id=msg.message_id,
+        callback_query_id=callback_query.id,
+        data=data,
+    )
+
+
 @router.post(
     '/telegram',
     response_model=ResponseEnvelope[None],
@@ -244,44 +322,30 @@ async def receive_telegram_update(
         logger.warning('Webhook secret mismatch — rejecting request')
         raise HTTPException(status_code=403, detail='Invalid webhook secret')
 
-    # 2. Ignore non-message updates (callback_query, etc.)
+    # 2. Callback queries (inline keyboard) take priority over messages.
+    if update.callback_query is not None:
+        if not _is_authorized(update.callback_query.from_):
+            logger.info(
+                'Ignoring callback_query from unauthorized user_id=%s',
+                getattr(update.callback_query.from_, 'id', None),
+            )
+            return ResponseEnvelope(status='success', message='ok')
+        _dispatch_callback(update.callback_query)
+        return ResponseEnvelope(status='success', message='ok')
+
+    # 3. Plain message branch
     if update.message is None:
         return ResponseEnvelope(status='success', message='ok')
 
     msg = update.message
-    sender = msg.from_
-
-    # 3. Check authorized user
-    authorized_id = config.TELEGRAM_USER_ID
-    if not authorized_id or str(getattr(sender, 'id', '')) != authorized_id:
+    if not _is_authorized(msg.from_):
         logger.info(
-            'Ignoring message from unauthorized user_id=%s', getattr(sender, 'id', None)
+            'Ignoring message from unauthorized user_id=%s',
+            getattr(msg.from_, 'id', None),
         )
         return ResponseEnvelope(status='success', message='ok')
-
-    # 4. Ignore non-text messages
     if not msg.text:
         return ResponseEnvelope(status='success', message='ok')
 
-    cmd, args = _parse_command(msg.text)
-    chat_id = str(msg.chat.id)
-
-    # 5. Dispatch command
-    if cmd == '/q':
-        reply = _handle_q()
-    elif cmd == '/pnl':
-        from fastapistock.services.portfolio_service import get_pnl_reply
-
-        reply = get_pnl_reply()
-    elif cmd == '/us':
-        reply = _handle_us(args)
-    elif cmd == '/tw':
-        reply = _handle_tw(args)
-    elif cmd == '/help':
-        reply = _HELP_TEXT
-    else:
-        # Unrecognized — silently ignore
-        return ResponseEnvelope(status='success', message='ok')
-
-    reply_to_chat(chat_id, reply)
+    _dispatch_message(msg)
     return ResponseEnvelope(status='success', message='ok')
