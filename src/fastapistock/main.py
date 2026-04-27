@@ -48,6 +48,11 @@ _LOGGING_CONFIG = {
         'level': 'INFO',
         'handlers': ['console'],
     },
+    'loggers': {
+        # httpx logs full URLs which include the Telegram bot token — suppress.
+        'httpx': {'level': 'WARNING', 'propagate': True},
+        'httpcore': {'level': 'WARNING', 'propagate': True},
+    },
 }
 
 logging.config.dictConfig(_LOGGING_CONFIG)
