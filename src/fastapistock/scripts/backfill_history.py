@@ -60,6 +60,25 @@ _TAIPEI_TZ = ZoneInfo('Asia/Taipei')
 _REPORT_TYPE = 'monthly'
 
 
+def _build_tw_name_to_code() -> dict[str, str]:
+    """Build a Chinese-name → numeric-code lookup dict using twstock.
+
+    TW transactions sheet stores Chinese names (e.g. '元大台灣50') in the
+    symbol column.  yfinance requires the numeric code (e.g. '0050').
+    Falls back to an empty dict when twstock is unavailable.
+
+    Returns:
+        Mapping of stock name to 4-5 digit code string.
+    """
+    try:
+        import twstock  # type: ignore[import-untyped]
+
+        return {info.name: code for code, info in twstock.codes.items()}
+    except Exception as exc:
+        logger.warning('report_history.backfill.twstock_unavailable: %s', exc)
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Internal types
 # ---------------------------------------------------------------------------
@@ -227,14 +246,19 @@ def _build_tw_snapshots(
     captured_at = datetime(
         month_end.year, month_end.month, month_end.day, 21, 0, tzinfo=_TAIPEI_TZ
     )
+    name_to_code = _build_tw_name_to_code()
 
     for pos in positions:
-        ticker_str = f'{pos.symbol}.TW'
+        code = name_to_code.get(pos.symbol, pos.symbol)
+        ticker_str = f'{code}.TW'
         close_price = _fetch_close_price(ticker_str, month_end)
+        if close_price is None:
+            ticker_str = f'{code}.TWO'
+            close_price = _fetch_close_price(ticker_str, month_end)
         if close_price is None:
             logger.warning(
                 'report_history.backfill.tw.no_price',
-                extra={'symbol': pos.symbol, 'period': report_period},
+                extra={'symbol': pos.symbol, 'code': code, 'period': report_period},
             )
             continue
 
@@ -256,7 +280,7 @@ def _build_tw_snapshots(
                 report_type=_REPORT_TYPE,
                 report_period=report_period,
                 market='TW',
-                symbol=pos.symbol,
+                symbol=code,
                 shares=shares_d,
                 avg_cost=avg_cost_d,
                 current_price=price_d,

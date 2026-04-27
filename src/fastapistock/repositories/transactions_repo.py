@@ -207,7 +207,7 @@ def fetch_tw_transactions() -> list[Transaction]:
         return []
 
     transactions: list[Transaction] = []
-    reader = csv.reader(io.StringIO(response.text))
+    reader = csv.reader(io.StringIO(response.content.decode('utf-8', errors='replace')))
 
     for row_index, row in enumerate(reader):
         if row_index == 0:
@@ -278,6 +278,8 @@ def _parse_us_row(row_index: int, row: list[str]) -> USTransaction | None:
         return None
 
     symbol = row[_US_COL_SYMBOL].strip()
+    if ':' in symbol:
+        symbol = symbol.split(':', 1)[1].strip()
     if not symbol:
         logger.warning('Skipping US tx row %d: empty symbol', row_index)
         return None
