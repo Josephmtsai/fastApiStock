@@ -385,7 +385,7 @@ def list_symbol_history(
                     PortfolioSymbolSnapshot.market == market,
                     PortfolioSymbolSnapshot.report_type == report_type,
                 )
-                .order_by(PortfolioSymbolSnapshot.report_period.asc())
+                .order_by(PortfolioSymbolSnapshot.report_period.desc())
                 .limit(limit)
             )
             if since_bound is not None:
@@ -403,7 +403,7 @@ def list_symbol_history(
             },
         )
         raise
-    rows = [_row_to_symbol_snapshot(r) for r in orm_rows]
+    rows = [_row_to_symbol_snapshot(r) for r in reversed(orm_rows)]
     logger.info(
         'report_history.repo.list_symbol_history.ok',
         extra={
@@ -448,7 +448,7 @@ def list_summary_history(
             stmt = (
                 select(PortfolioReportSummary)
                 .where(PortfolioReportSummary.report_type == report_type)
-                .order_by(PortfolioReportSummary.report_period.asc())
+                .order_by(PortfolioReportSummary.report_period.desc())
                 .limit(limit)
             )
             if since_bound is not None:
@@ -465,7 +465,7 @@ def list_summary_history(
             },
         )
         raise
-    rows = [_row_to_report_summary(r) for r in orm_rows]
+    rows = [_row_to_report_summary(r) for r in reversed(orm_rows)]
     logger.info(
         'report_history.repo.list_summary_history.ok',
         extra={'report_type': report_type, 'records': len(rows)},
