@@ -678,7 +678,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error('report_history.backfill.db_init_fail: %s', exc)
         return 1
 
-    logger.info('report_history.backfill.start', extra={'args': vars(args)})
+    logger.info('report_history.backfill.start', extra={'cli_args': vars(args)})
 
     # --repair-deltas mode
     if args.repair_deltas:
