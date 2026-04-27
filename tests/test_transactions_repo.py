@@ -30,6 +30,7 @@ def _make_csv(*rows: str) -> str:
 def _mock_response(text: str, status_code: int = 200) -> MagicMock:
     resp = MagicMock()
     resp.text = text
+    resp.content = text.encode('utf-8')
     resp.status_code = status_code
     resp.raise_for_status = MagicMock()
     return resp
