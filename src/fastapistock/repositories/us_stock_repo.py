@@ -6,6 +6,7 @@ and builds RichStockData with full technical indicators.
 
 import logging
 import time
+from datetime import datetime
 from datetime import time as dt_time
 from random import SystemRandom
 from zoneinfo import ZoneInfo
@@ -29,15 +30,20 @@ _PREMARKET_END = dt_time(9, 30)
 def _fetch_premarket_price(ticker: yf.Ticker) -> float | None:
     """Fetch the latest pre-market close price for a US ticker.
 
-    Queries 1-minute intraday history with pre/post market data included,
-    then filters rows whose Eastern Time falls within 04:00–09:30.
+    Returns None immediately when the wall-clock (Eastern Time) is outside
+    04:00–09:30, preventing historical pre-market candles from being
+    misreported as a live pre-market price after the regular session opens.
 
     Args:
         ticker: An initialised yfinance Ticker instance.
 
     Returns:
-        Rounded pre-market close price, or None when no data is available.
+        Rounded pre-market close price, or None when no data is available
+        or when the current ET time is outside the pre-market window.
     """
+    now_et = datetime.now(_ET_TZ).time()
+    if not (_PREMARKET_START <= now_et < _PREMARKET_END):
+        return None
     try:
         hist: pd.DataFrame = ticker.history(
             period='1d',

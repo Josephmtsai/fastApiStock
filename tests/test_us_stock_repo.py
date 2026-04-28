@@ -1,6 +1,6 @@
 """Tests for the US stock repository."""
 
-from datetime import UTC, date
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -15,6 +15,11 @@ from fastapistock.repositories.us_stock_repo import (
 from fastapistock.schemas.stock import RichStockData
 
 _ET = ZoneInfo('America/New_York')
+
+# Freeze the wall-clock inside _fetch_premarket_price for deterministic tests.
+_PATCH_DATETIME = 'fastapistock.repositories.us_stock_repo.datetime'
+_PREMARKET_NOW = datetime(2025, 1, 2, 4, 30, 0, tzinfo=_ET)  # 04:30 ET — inside window
+_POSTMARKET_NOW = datetime(2025, 1, 2, 10, 0, 0, tzinfo=_ET)  # 10:00 ET — after open
 
 
 def _make_hist(n: int = 60, price: float = 150.0) -> pd.DataFrame:
@@ -77,21 +82,31 @@ def _make_ticker_mock(
 # ---------------------------------------------------------------------------
 
 
-def test_fetch_premarket_price_returns_value_during_premarket() -> None:
+@patch(_PATCH_DATETIME)
+def test_fetch_premarket_price_returns_value_during_premarket(
+    mock_dt: MagicMock,
+) -> None:
+    mock_dt.now.return_value = _PREMARKET_NOW
     ticker = MagicMock()
     ticker.history.return_value = _make_premarket_hist(185.5)
     result = _fetch_premarket_price(ticker)
     assert result == pytest.approx(185.5, rel=0.001)
 
 
-def test_fetch_premarket_price_returns_none_on_empty_hist() -> None:
+@patch(_PATCH_DATETIME)
+def test_fetch_premarket_price_returns_none_on_empty_hist(mock_dt: MagicMock) -> None:
+    mock_dt.now.return_value = _PREMARKET_NOW
     ticker = MagicMock()
     ticker.history.return_value = pd.DataFrame()
     assert _fetch_premarket_price(ticker) is None
 
 
-def test_fetch_premarket_price_returns_none_when_no_premarket_rows() -> None:
-    """Rows outside 04:00–09:30 ET should yield None."""
+@patch(_PATCH_DATETIME)
+def test_fetch_premarket_price_returns_none_when_no_premarket_rows(
+    mock_dt: MagicMock,
+) -> None:
+    """Rows outside 04:00–09:30 ET in the data should yield None."""
+    mock_dt.now.return_value = _PREMARKET_NOW
     idx = pd.DatetimeIndex(
         ['2025-01-02 15:00:00'],
         tz=UTC,
@@ -111,17 +126,32 @@ def test_fetch_premarket_price_returns_none_when_no_premarket_rows() -> None:
     assert _fetch_premarket_price(ticker) is None
 
 
-def test_fetch_premarket_price_returns_none_on_exception() -> None:
+@patch(_PATCH_DATETIME)
+def test_fetch_premarket_price_returns_none_on_exception(mock_dt: MagicMock) -> None:
+    mock_dt.now.return_value = _PREMARKET_NOW
     ticker = MagicMock()
     ticker.history.side_effect = RuntimeError('network error')
     assert _fetch_premarket_price(ticker) is None
 
 
-def test_fetch_premarket_price_rounds_to_two_decimals() -> None:
+@patch(_PATCH_DATETIME)
+def test_fetch_premarket_price_rounds_to_two_decimals(mock_dt: MagicMock) -> None:
+    mock_dt.now.return_value = _PREMARKET_NOW
     ticker = MagicMock()
     ticker.history.return_value = _make_premarket_hist(185.123456)
     result = _fetch_premarket_price(ticker)
     assert result == 185.12
+
+
+@patch(_PATCH_DATETIME)
+def test_fetch_premarket_price_returns_none_outside_window(mock_dt: MagicMock) -> None:
+    """After 09:30 ET the gate must short-circuit before any yfinance call."""
+    mock_dt.now.return_value = _POSTMARKET_NOW
+    ticker = MagicMock()
+    ticker.history.return_value = _make_premarket_hist(185.5)  # data exists
+    result = _fetch_premarket_price(ticker)
+    assert result is None
+    ticker.history.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -192,11 +222,13 @@ def test_price_and_change_calculated(
     assert result.change == pytest.approx(0.0, abs=0.01)
 
 
+@patch(_PATCH_DATETIME)
 @patch('fastapistock.repositories.us_stock_repo.yf.Ticker')
 @patch('fastapistock.repositories.us_stock_repo.time.sleep')
 def test_premarket_price_populated_during_premarket(
-    mock_sleep: MagicMock, mock_ticker_cls: MagicMock
+    mock_sleep: MagicMock, mock_ticker_cls: MagicMock, mock_dt: MagicMock
 ) -> None:
+    mock_dt.now.return_value = _PREMARKET_NOW
     mock_ticker = _make_ticker_mock(
         daily_hist=_make_hist(60),
         premarket_hist=_make_premarket_hist(188.0),
