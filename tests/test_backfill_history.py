@@ -329,7 +329,7 @@ def test_backfill_month_tw_upsert_called(
     monkeypatch.setattr(_time_mod, 'sleep', lambda s: None)
 
     with patch('yfinance.Ticker', return_value=mock_ticker):
-        new_tw, new_us = _backfill_month(
+        new_tw, new_us, _, _ = _backfill_month(
             'TW',
             2025,
             6,

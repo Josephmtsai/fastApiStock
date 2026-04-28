@@ -231,18 +231,22 @@ def _build_tw_snapshots(
     positions: list[_SymbolPortfolio],
     report_period: str,
     month_end: date,
-) -> list[SymbolSnapshot]:
+    prev_pnl: dict[str, Decimal],
+) -> tuple[list[SymbolSnapshot], dict[str, Decimal]]:
     """Fetch prices and build TW SymbolSnapshot rows.
 
     Args:
         positions: Reconstructed TW portfolio positions.
         report_period: YYYY-MM string for the snapshot period.
         month_end: Last calendar day of the period.
+        prev_pnl: Previous period's unrealized_pnl keyed by symbol code.
 
     Returns:
-        List of SymbolSnapshot rows for all symbols with a valid price.
+        Tuple of (snapshots, current_pnl) where current_pnl maps each
+        symbol code to its unrealized_pnl for use as next month's prev_pnl.
     """
     snapshots: list[SymbolSnapshot] = []
+    current_pnl: dict[str, Decimal] = {}
     captured_at = datetime(
         month_end.year, month_end.month, month_end.day, 21, 0, tzinfo=_TAIPEI_TZ
     )
@@ -274,6 +278,10 @@ def _build_tw_snapshots(
         pnl_pct: Decimal | None = None
         if avg_cost_d > Decimal('0'):
             pnl_pct = (price_d - avg_cost_d) / avg_cost_d * Decimal('100')
+        pnl_delta: Decimal | None = (
+            unrealized_pnl - prev_pnl[code] if code in prev_pnl else None
+        )
+        current_pnl[code] = unrealized_pnl
 
         snapshots.append(
             SymbolSnapshot(
@@ -287,30 +295,34 @@ def _build_tw_snapshots(
                 market_value=market_value,
                 unrealized_pnl=unrealized_pnl,
                 pnl_pct=pnl_pct,
-                pnl_delta=None,
+                pnl_delta=pnl_delta,
                 captured_at=captured_at,
             )
         )
 
-    return snapshots
+    return snapshots, current_pnl
 
 
 def _build_us_snapshots(
     positions: list[_SymbolPortfolio],
     report_period: str,
     month_end: date,
-) -> list[SymbolSnapshot]:
+    prev_pnl: dict[str, Decimal],
+) -> tuple[list[SymbolSnapshot], dict[str, Decimal]]:
     """Fetch prices and build US SymbolSnapshot rows.
 
     Args:
         positions: Reconstructed US portfolio positions.
         report_period: YYYY-MM string for the snapshot period.
         month_end: Last calendar day of the period.
+        prev_pnl: Previous period's unrealized_pnl keyed by symbol.
 
     Returns:
-        List of SymbolSnapshot rows for all symbols with a valid price.
+        Tuple of (snapshots, current_pnl) where current_pnl maps each
+        symbol to its unrealized_pnl for use as next month's prev_pnl.
     """
     snapshots: list[SymbolSnapshot] = []
+    current_pnl: dict[str, Decimal] = {}
     captured_at = datetime(
         month_end.year, month_end.month, month_end.day, 21, 0, tzinfo=_TAIPEI_TZ
     )
@@ -336,6 +348,10 @@ def _build_us_snapshots(
         pnl_pct: Decimal | None = None
         if avg_cost_d > Decimal('0'):
             pnl_pct = (price_d - avg_cost_d) / avg_cost_d * Decimal('100')
+        pnl_delta = (
+            unrealized_pnl - prev_pnl[pos.symbol] if pos.symbol in prev_pnl else None
+        )
+        current_pnl[pos.symbol] = unrealized_pnl
 
         snapshots.append(
             SymbolSnapshot(
@@ -349,12 +365,12 @@ def _build_us_snapshots(
                 market_value=market_value,
                 unrealized_pnl=unrealized_pnl,
                 pnl_pct=pnl_pct,
-                pnl_delta=None,
+                pnl_delta=pnl_delta,
                 captured_at=captured_at,
             )
         )
 
-    return snapshots
+    return snapshots, current_pnl
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +389,9 @@ def _backfill_month(
     verbose: bool,
     prev_tw_total: Decimal | None = None,
     prev_us_total: Decimal | None = None,
-) -> tuple[Decimal | None, Decimal | None]:
+    prev_tw_symbol_pnl: dict[str, Decimal] | None = None,
+    prev_us_symbol_pnl: dict[str, Decimal] | None = None,
+) -> tuple[Decimal | None, Decimal | None, dict[str, Decimal], dict[str, Decimal]]:
     """Backfill one market+month combination into DB and optionally Sheets.
 
     Args:
@@ -384,11 +402,13 @@ def _backfill_month(
         skip_sheet: When True, skip Google Sheets append.
         filter_symbols: When given, restrict to these symbols only.
         verbose: When True, log extra debug information.
-        prev_tw_total: Previous month's TW PnL total for delta calculation.
-        prev_us_total: Previous month's US PnL total for delta calculation.
+        prev_tw_total: Previous month's TW PnL total for summary delta.
+        prev_us_total: Previous month's US PnL total for summary delta.
+        prev_tw_symbol_pnl: Previous month's per-symbol TW unrealized_pnl.
+        prev_us_symbol_pnl: Previous month's per-symbol US unrealized_pnl.
 
     Returns:
-        Tuple of (new_tw_total, new_us_total) Decimal values (or None).
+        Tuple of (new_tw_total, new_us_total, tw_symbol_pnl, us_symbol_pnl).
     """
     month_end = date(year, month, calendar.monthrange(year, month)[1])
     report_period = f'{year:04d}-{month:02d}'
@@ -400,16 +420,22 @@ def _backfill_month(
 
     tw_snapshots: list[SymbolSnapshot] = []
     us_snapshots: list[SymbolSnapshot] = []
+    new_tw_symbol_pnl: dict[str, Decimal] = {}
+    new_us_symbol_pnl: dict[str, Decimal] = {}
 
     if market in ('TW', 'BOTH'):
         tw_txns = fetch_tw_transactions()
         tw_positions = _reconstruct_tw_portfolio(tw_txns, month_end, filter_symbols)
-        tw_snapshots = _build_tw_snapshots(tw_positions, report_period, month_end)
+        tw_snapshots, new_tw_symbol_pnl = _build_tw_snapshots(
+            tw_positions, report_period, month_end, prev_tw_symbol_pnl or {}
+        )
 
     if market in ('US', 'BOTH'):
         us_txns = fetch_us_transactions()
         us_positions = _reconstruct_us_portfolio(us_txns, month_end, filter_symbols)
-        us_snapshots = _build_us_snapshots(us_positions, report_period, month_end)
+        us_snapshots, new_us_symbol_pnl = _build_us_snapshots(
+            us_positions, report_period, month_end, prev_us_symbol_pnl or {}
+        )
 
     all_snapshots = tw_snapshots + us_snapshots
 
@@ -470,7 +496,7 @@ def _backfill_month(
         },
     )
 
-    return pnl_tw_total, pnl_us_total
+    return pnl_tw_total, pnl_us_total, new_tw_symbol_pnl, new_us_symbol_pnl
 
 
 # ---------------------------------------------------------------------------
@@ -727,6 +753,8 @@ def main(argv: list[str] | None = None) -> int:
 
     prev_tw_total: Decimal | None = None
     prev_us_total: Decimal | None = None
+    prev_tw_symbol_pnl: dict[str, Decimal] = {}
+    prev_us_symbol_pnl: dict[str, Decimal] = {}
 
     # Resolve which market(s) to run and the start month.
     # When BOTH markets are requested they must run in a single _backfill_month
@@ -762,7 +790,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     for year, month in month_list:
-        new_tw, new_us = _backfill_month(
+        new_tw, new_us, prev_tw_symbol_pnl, prev_us_symbol_pnl = _backfill_month(
             market_arg,
             year,
             month,
@@ -772,6 +800,8 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             prev_tw_total=prev_tw_total,
             prev_us_total=prev_us_total,
+            prev_tw_symbol_pnl=prev_tw_symbol_pnl,
+            prev_us_symbol_pnl=prev_us_symbol_pnl,
         )
         prev_tw_total = new_tw
         prev_us_total = new_us
