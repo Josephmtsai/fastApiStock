@@ -32,7 +32,7 @@ tools:
 
 1. **需求釐清 (Requirements Clarification)**
    - 主動追問模糊之處，直到需求明確可執行。
-   - 確認：資料來源、觸發方式 (API/Telegram/排程)、輸出格式、邊界條件。
+   - 確認：資料來源、觸發方式 (API/Telegram/排程)、輸出格式、邊界條件、影響範圍、既有功能影響詢問。
 
 2. **User Story 撰寫**
    - 格式：`As a [role], I want to [action], so that [benefit].`

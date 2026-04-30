@@ -18,7 +18,9 @@
   - **Any 禁令**: 嚴禁使用 `Any`。若第三方庫限制，須加註釋說明。
   - 驗證: `uv run mypy src/`。
 - **禁令**: 嚴禁 `eval()`、`exec()`、`print()` (請用 logging) 與模糊的 `except:`。不得使用 `# noqa` 除非有極充分理由。
-
+  - 禁止直接修改bug 需要新開feature branch 修正後commit 在merge到main
+- **功能修改**
+  - 確保修改造成的舊有功能不被影響到 如果被影響到應由SA提出分析
 ## 3. 安全與防禦性設計 (Security & Resilience)
 - **安全性**:
   - 嚴禁 Hardcode Secret，統一由 `python-dotenv` 讀取環境變數。
