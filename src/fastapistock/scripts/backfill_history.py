@@ -23,6 +23,7 @@ import calendar
 import logging
 import random
 import sys
+import time as _time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import NamedTuple
@@ -33,6 +34,10 @@ import yfinance
 from fastapistock.repositories import (
     sheet_writer,
     transactions_repo,
+)
+from fastapistock.repositories.portfolio_snapshot_repo import (
+    PortfolioSnapshot,
+    save_monthly,
 )
 from fastapistock.repositories.report_history_repo import (
     ReportSummary,
@@ -55,9 +60,15 @@ _TW_DELAY_MIN = 1.0
 _TW_DELAY_MAX = 2.5
 _US_DELAY_MIN = 0.1
 _US_DELAY_MAX = 0.3
+_FX_DELAY_MIN = 0.1
+_FX_DELAY_MAX = 0.4
 _TW_BUY_MARKER = '買'
 _TAIPEI_TZ = ZoneInfo('Asia/Taipei')
 _REPORT_TYPE = 'monthly'
+
+# In-process cache: maps YYYY-MM date string to USD/TWD rate (Decimal).
+# Avoids repeated yfinance calls for the same month during a single backfill run.
+_usd_twd_rate_cache: dict[str, Decimal] = {}
 
 
 def _build_tw_name_to_code() -> dict[str, str]:
@@ -77,6 +88,68 @@ def _build_tw_name_to_code() -> dict[str, str]:
     except Exception as exc:
         logger.warning('report_history.backfill.twstock_unavailable: %s', exc)
         return {}
+
+
+def _fetch_usd_twd_rate(month_end: date) -> Decimal | None:
+    """Return the USD/TWD exchange rate on or near *month_end*.
+
+    Uses an in-process dict cache keyed by ``YYYY-MM`` so each month is only
+    fetched once per backfill run.  Queries yfinance ticker ``TWD=X`` for a
+    7-day window starting at *month_end* and returns the first available Close
+    value.  A random sleep is applied before each live fetch per the CLAUDE.md
+    external-API policy.
+
+    Args:
+        month_end: Last calendar day of the target month.
+
+    Returns:
+        Exchange rate as a ``Decimal``, or ``None`` when yfinance returns no
+        data or raises.
+    """
+    cache_key = month_end.strftime('%Y-%m')
+    if cache_key in _usd_twd_rate_cache:
+        return _usd_twd_rate_cache[cache_key]
+
+    _time.sleep(random.uniform(_FX_DELAY_MIN, _FX_DELAY_MAX))
+
+    end_date = month_end + timedelta(days=7)
+    try:
+        ticker = yfinance.Ticker('TWD=X')
+        hist = ticker.history(
+            start=month_end.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d'),
+        )
+        if hist.empty:
+            logger.warning(
+                'report_history.backfill.fx.no_data',
+                extra={'period': cache_key},
+            )
+            return None
+        close_series = hist['Close'].dropna()
+        if close_series.empty:
+            logger.warning(
+                'report_history.backfill.fx.no_data',
+                extra={'period': cache_key},
+            )
+            return None
+        rate = Decimal(str(float(close_series.iloc[0])))
+    except Exception as exc:
+        logger.warning(
+            'report_history.backfill.fx.fetch_fail',
+            extra={
+                'period': cache_key,
+                'error_type': type(exc).__name__,
+                'error': str(exc),
+            },
+        )
+        return None
+
+    _usd_twd_rate_cache[cache_key] = rate
+    logger.info(
+        'report_history.backfill.fx.fetched',
+        extra={'period': cache_key, 'rate': str(rate)},
+    )
+    return rate
 
 
 # ---------------------------------------------------------------------------
@@ -266,8 +339,6 @@ def _build_tw_snapshots(
             )
             continue
 
-        import time as _time
-
         _time.sleep(random.uniform(_TW_DELAY_MIN, _TW_DELAY_MAX))
 
         shares_d = Decimal(str(pos.current_shares))
@@ -309,23 +380,38 @@ def _build_us_snapshots(
     month_end: date,
     prev_pnl: dict[str, Decimal],
 ) -> tuple[list[SymbolSnapshot], dict[str, Decimal]]:
-    """Fetch prices and build US SymbolSnapshot rows.
+    """Fetch prices and build US SymbolSnapshot rows with USD→TWD conversion.
+
+    All monetary fields stored in the snapshot (``unrealized_pnl``,
+    ``market_value``, ``avg_cost``, ``current_price``) remain in USD so the
+    per-symbol rows are self-consistent.  Only ``unrealized_pnl`` is converted
+    to TWD via the historical USD/TWD rate for the summary total, and the
+    converted TWD value is what gets stored in ``unrealized_pnl`` so that
+    ``pnl_us_total`` (sum of snapshots) aligns with the TWD figure read from
+    Google Sheets by ``portfolio_repo.fetch_pnl_us()``.
 
     Args:
         positions: Reconstructed US portfolio positions.
         report_period: YYYY-MM string for the snapshot period.
         month_end: Last calendar day of the period.
-        prev_pnl: Previous period's unrealized_pnl keyed by symbol.
+        prev_pnl: Previous period's unrealized_pnl (TWD) keyed by symbol.
 
     Returns:
         Tuple of (snapshots, current_pnl) where current_pnl maps each
-        symbol to its unrealized_pnl for use as next month's prev_pnl.
+        symbol to its unrealized_pnl in TWD for use as next month's prev_pnl.
     """
     snapshots: list[SymbolSnapshot] = []
     current_pnl: dict[str, Decimal] = {}
     captured_at = datetime(
         month_end.year, month_end.month, month_end.day, 21, 0, tzinfo=_TAIPEI_TZ
     )
+
+    usd_twd_rate = _fetch_usd_twd_rate(month_end)
+    if usd_twd_rate is None:
+        logger.warning(
+            'report_history.backfill.us.no_fx_rate',
+            extra={'period': report_period},
+        )
 
     for pos in positions:
         close_price = _fetch_close_price(pos.symbol, month_end)
@@ -336,19 +422,30 @@ def _build_us_snapshots(
             )
             continue
 
-        import time as _time
-
         _time.sleep(random.uniform(_US_DELAY_MIN, _US_DELAY_MAX))
 
         shares_d = Decimal(str(pos.current_shares))
         avg_cost_d = Decimal(str(pos.avg_cost))
         price_d = Decimal(str(close_price))
         market_value = shares_d * price_d
-        unrealized_pnl = (price_d - avg_cost_d) * shares_d
+        unrealized_pnl_usd = (price_d - avg_cost_d) * shares_d
         pnl_pct: Decimal | None = None
         if avg_cost_d > Decimal('0'):
             pnl_pct = (price_d - avg_cost_d) / avg_cost_d * Decimal('100')
-        pnl_delta = (
+
+        # Convert USD P&L to TWD to match what Google Sheets H21 (fetch_pnl_us)
+        # already reports.  When the FX rate is unavailable fall back to USD so
+        # the row is still written (operator can re-run once the rate is live).
+        if usd_twd_rate is not None:
+            unrealized_pnl = unrealized_pnl_usd * usd_twd_rate
+        else:
+            unrealized_pnl = unrealized_pnl_usd
+            logger.warning(
+                'report_history.backfill.us.pnl_usd_fallback',
+                extra={'symbol': pos.symbol, 'period': report_period},
+            )
+
+        pnl_delta: Decimal | None = (
             unrealized_pnl - prev_pnl[pos.symbol] if pos.symbol in prev_pnl else None
         )
         current_pnl[pos.symbol] = unrealized_pnl
@@ -482,6 +579,15 @@ def _backfill_month(
                 sheet_writer.append_monthly_history('TW', tw_snapshots)
             if us_snapshots:
                 sheet_writer.append_monthly_history('US', us_snapshots)
+
+        # Persist Redis snapshot so the next month's cron job reads the correct
+        # baseline for delta calculation (both totals are already in TWD).
+        redis_snapshot = PortfolioSnapshot(
+            pnl_tw=float(pnl_tw_total),
+            pnl_us=float(pnl_us_total),
+            timestamp=captured_at,
+        )
+        save_monthly(redis_snapshot)
 
     logger.info(
         'report_history.backfill.month.done',

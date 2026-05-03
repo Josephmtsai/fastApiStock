@@ -35,7 +35,7 @@ class PortfolioSnapshot:
 
     Attributes:
         pnl_tw: TW portfolio total unrealized PnL in TWD.
-        pnl_us: US portfolio total unrealized PnL in USD.
+        pnl_us: US portfolio total unrealized PnL in TWD.
         timestamp: Asia/Taipei aware timestamp when the snapshot was taken.
     """
 
