@@ -14,8 +14,9 @@ flowchart TB
         direction LR
         TG_API[["Telegram Bot API"]]
         YF[["yfinance (Yahoo Finance)"]]
-        GSHEET[["Google Sheets CSV<br/>(投資紀錄/計畫)"]]
-        REDIS[("Redis<br/>cache + rate-limit")]
+        GSHEET[["Google Sheets<br/>(投資紀錄/計畫/歷史存檔)"]]
+        REDIS[("Redis<br/>cache + rate-limit + snapshots")]
+        PG[("Postgres<br/>portfolio_symbol_snapshots<br/>portfolio_report_summary")]
     end
 
     subgraph ENTRY["Entry / Bootstrap"]
@@ -36,7 +37,7 @@ flowchart TB
         R_STOCKS["stocks.py"]
         R_TW_TG["telegram.py"]
         R_US_TG["us_telegram.py"]
-        R_WH["webhook.py<br/>/tw /us /q /pnl /help"]
+        R_WH["webhook.py<br/>/tw /us /q /pnl /history /help"]
         R_REP["reports.py"]
     end
 
@@ -48,6 +49,7 @@ flowchart TB
         S_REP["report_service.py"]
         S_TG["telegram_service.py"]
         S_IND["indicators.py"]
+        S_HIST["history_handler.py"]
     end
 
     subgraph REPO["Repository Layer"]
@@ -56,8 +58,10 @@ flowchart TB
         RP_PORT["portfolio_repo.py<br/>PortfolioEntry"]
         RP_PLAN["investment_plan_repo.py"]
         RP_TX["transactions_repo.py"]
-        RP_SNAP["portfolio_snapshot_repo.py"]
-        RP_SIG["signal_history_repo.py"]
+        RP_SNAP["portfolio_snapshot_repo.py<br/>Redis 快照"]
+        RP_SIG["signal_history_repo.py<br/>Redis 快照"]
+        RP_HIST["report_history_repo.py<br/>SymbolSnapshot / ReportSummary"]
+        RP_SHEET["sheet_writer.py<br/>gspread 歷史存檔"]
     end
 
     subgraph SHARED["Shared Contracts"]
@@ -85,7 +89,9 @@ flowchart TB
     R_WH --> S_US
     R_WH --> S_TG
     R_WH --> RP_PORT
+    R_WH --> S_HIST
     R_REP --> S_REP
+    R_REP --> RP_HIST
 
     SCHED --> S_REP
     SCHED --> S_TG
@@ -97,6 +103,8 @@ flowchart TB
     S_PORT --> S_STOCK
     S_REP --> S_TG
     S_REP --> S_IND
+    S_REP --> RP_HIST
+    S_REP --> RP_SHEET
 
     S_STOCK --> RP_TW
     S_US --> RP_US
@@ -127,8 +135,12 @@ flowchart TB
     RP_PORT -. httpx CSV .-> GSHEET
     RP_PLAN -. httpx CSV .-> GSHEET
     RP_TX -. httpx CSV .-> GSHEET
+    RP_SHEET -. gspread write .-> GSHEET
+    RP_HIST -. SQLAlchemy .-> PG
     CACHE -. redis-py .-> REDIS
     RL -. storage .-> REDIS
+    RP_SNAP -. redis-py .-> REDIS
+    RP_SIG -. redis-py .-> REDIS
     S_TG -. httpx POST .-> TG_API
     R_WH <-. webhook POST .- TG_API
 
@@ -142,10 +154,10 @@ flowchart TB
 
     class MAIN,CFG,EXC,SCHED entry
     class R_INDEX,R_HEALTH,R_STOCKS,R_TW_TG,R_US_TG,R_WH,R_REP router
-    class S_STOCK,S_US,S_PORT,S_PLAN,S_REP,S_TG,S_IND svc
-    class RP_TW,RP_US,RP_PORT,RP_PLAN,RP_TX,RP_SNAP,RP_SIG repo
+    class S_STOCK,S_US,S_PORT,S_PLAN,S_REP,S_TG,S_IND,S_HIST svc
+    class RP_TW,RP_US,RP_PORT,RP_PLAN,RP_TX,RP_SNAP,RP_SIG,RP_HIST,RP_SHEET repo
     class SCH_COMMON,SCH_STOCK,CACHE shared
-    class TG_API,YF,GSHEET,REDIS ext
+    class TG_API,YF,GSHEET,REDIS,PG ext
     class LOGMW,RL mw
 ```
 
@@ -158,6 +170,8 @@ flowchart TB
 | `StockNotFoundError` | `repositories/twstock_repo.py` | 全域 404 觸發點 |
 | `PortfolioEntry` | `repositories/portfolio_repo.py` | 不可變持倉列 |
 | `redis_cache.get/put` | `cache/redis_cache.py` | 共用快取入口 |
+| `ReportSummary` | `repositories/report_history_repo.py` | 月報彙總資料合約 |
+| `SymbolSnapshot` | `repositories/report_history_repo.py` | 個股月度快照資料合約 |
 
 ---
 
@@ -189,6 +203,7 @@ sequenceDiagram
     Uvicorn->>Life: startup
     Life->>Sched: build_scheduler().start()
     Life->>TG: POST setMyCommands (q/us/tw/help)
+    Note over Life: /pnl 與 /history 透過 webhook 支援，但未顯示於 bot menu
     Note over Life: yield → serving requests
     Uvicorn->>Life: shutdown
     Life->>Sched: scheduler.shutdown(wait=False)
@@ -241,9 +256,10 @@ sequenceDiagram
     participant PSvc as portfolio_service
     participant SSvc as stock_service
     participant USvc as us_stock_service
+    participant HSvc as history_handler
     participant TSvc as telegram_service
 
-    User->>TG: /q | /pnl | /us AAPL | /tw 2330 | /help
+    User->>TG: /q | /pnl | /us AAPL | /tw 2330 | /history | /help
     TG->>WH: POST /api/v1/webhook/telegram<br/>(+ secret header)
     WH->>WH: 驗 secret / user_id / 解析 cmd
     alt cmd == /q
@@ -260,6 +276,9 @@ sequenceDiagram
         WH->>SSvc: get_rich_tw_stocks(codes)
         SSvc-->>WH: RichStockData[]
         WH->>TSvc: format_rich_stock_message(TW)
+    else cmd == /history
+        WH->>HSvc: handle_history_command(update)
+        HSvc-->>WH: 互動選單 / 歷史報告內容
     else cmd == /help
         WH->>WH: _HELP_TEXT
     end
@@ -302,24 +321,31 @@ flowchart TB
 
 ---
 
-## 5. Portfolio / Investment Plan / Signal History 資料流圖
+## 5. Portfolio / Investment Plan / Report History 資料流圖
 
-三個 Google Sheets CSV 提供來源資料，兩個本地持久化 repo（portfolio_snapshot / signal_history）負責快照與訊號歷史；`report_service` 是最大的 fan-in 節點。
+三個 Google Sheets CSV 提供來源資料。`portfolio_snapshot_repo` 與 `signal_history_repo` 以 **Redis** 存短期快照（TTL 120 天）；`report_history_repo` 以 **Postgres** 存永久月度歷史記錄；`sheet_writer` 以 gspread 將報告回寫至 Google Sheets 歷史 tab。`report_service` 是最大的 fan-in 節點。
 
 ```mermaid
 flowchart LR
-    subgraph REMOTE[遠端 Google Sheets CSV]
+    subgraph REMOTE["遠端 Google Sheets"]
         G1[[portfolio CSV]]
         G2[[investment_plan CSV]]
         G3[[transactions CSV]]
+        G4[[歷史存檔 tab<br/>sheet_writer 寫入]]
+    end
+
+    subgraph PG_STORE["Postgres（永久歷史）"]
+        DB[("portfolio_symbol_snapshots<br/>portfolio_report_summary")]
     end
 
     subgraph REPOS[Repositories]
         PR[portfolio_repo]
         IPR[investment_plan_repo]
         TXR[transactions_repo]
-        SNAP[(portfolio_snapshot_repo<br/>本地持久化)]
-        SIG[(signal_history_repo<br/>本地持久化)]
+        SNAP[(portfolio_snapshot_repo<br/>Redis 快照 TTL 120d)]
+        SIG[(signal_history_repo<br/>Redis 快照 TTL 120d)]
+        RHR[report_history_repo<br/>SymbolSnapshot / ReportSummary]
+        SHW[sheet_writer<br/>gspread 存檔]
     end
 
     G1 --> PR
@@ -347,9 +373,15 @@ flowchart LR
     IPSVC --> RSVC
 
     RSVC --> TSVC[telegram_service]
+    RSVC --> RHR
+    RSVC --> SHW
+    RHR -. SQLAlchemy .-> DB
+    SHW -. gspread write .-> G4
+
     PSVC --> WH[routers/webhook.py /pnl]
     IPSVC --> WH2[routers/webhook.py /q]
-    RSVC --> RR[routers/reports.py preview]
+    RSVC --> RR[routers/reports.py]
+    RHR --> RR
 ```
 
 ---
@@ -386,7 +418,68 @@ flowchart TB
 
 ---
 
-## 附錄：API 文件（OpenAPI / Swagger）
+## 7. REST API 端點總覽
+
+所有路由皆回傳 `ResponseEnvelope`，需授權的端點以 `Authorization: Bearer {ADMIN_TOKEN}` header 驗證。
+
+### 股票查詢
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| `GET` | `/api/v1/stocks/{code}` | 查詢單支股票（TW / US 自動判斷） |
+| `GET` | `/api/v1/telegram/tw` | 批次查台股（逗號分隔代碼） |
+| `GET` | `/api/v1/telegram/us` | 批次查美股（逗號分隔代碼） |
+
+### Telegram Webhook
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| `POST` | `/api/v1/webhook/telegram` | 接收 Telegram update，處理 `/q /pnl /us /tw /history /help` |
+
+### 報告 API（`routers/reports.py`）
+
+| 方法 | 路徑 | 說明 | 授權 |
+|---|---|---|---|
+| `GET` | `/api/v1/reports/weekly/preview` | 渲染週報文字（不發送） | 否 |
+| `GET` | `/api/v1/reports/monthly/preview` | 渲染月報文字（不發送） | 否 |
+| `POST` | `/api/v1/reports/weekly/send` | 手動發送週報至 Telegram | 是 |
+| `POST` | `/api/v1/reports/monthly/send` | 手動發送月報至 Telegram | 是 |
+| `POST` | `/api/v1/reports/history/trigger` | 手動觸發報告歷史管線（支援 `dry_run` / `skip_telegram` / `skip_sheet`） | 是 |
+| `GET` | `/api/v1/reports/history` | 查詢月度歷史記錄（per-symbol 時間序列 / 單市場摘要 / 雙市場摘要） | 否 |
+| `GET` | `/api/v1/reports/history/options` | 取得查詢選擇器 metadata（市場 / 代碼 / 期間） | 否 |
+
+### 系統
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| `GET` | `/health` | 健康檢查（rate-limit 豁免） |
+| `GET` | `/` | 服務資訊 |
+
+---
+
+## 附錄 A：CLI 管理腳本
+
+`scripts/backfill_history.py` 為獨立的批次管理工具，不屬於執行時服務，用於回溯填充月度歷史至 Postgres 與 Google Sheets。
+
+```
+uv run python -m fastapistock.scripts.backfill_history [options]
+```
+
+| 選項 | 說明 |
+|---|---|
+| `--markets TW\|US\|BOTH` | 指定市場（預設 BOTH） |
+| `--from YYYY-MM` | 起始月份（預設最早交易月） |
+| `--to YYYY-MM` | 結束月份（預設上個月） |
+| `--repair-deltas` | 從 DB 重算所有月份的 `pnl_*_delta`（與 `--from/--to` 互斥） |
+| `--dry-run` | 試跑，不寫入 DB / Sheet / Redis |
+| `--skip-sheet` | 跳過 Google Sheets 寫入（避免重複 append） |
+| `--verbose` | 開啟 DEBUG 日誌 |
+
+**注意**：每次 backfill 完成後會同步寫入 Redis monthly snapshot，確保後續 cron job 的 delta 基準與 DB 一致。
+
+---
+
+## 附錄 B：API 文件（OpenAPI / Swagger）
 
 FastAPI 內建 OpenAPI 3 支援，無需額外套件。啟動 `uvicorn fastapistock.main:app` 後可直接使用：
 
