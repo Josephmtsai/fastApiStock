@@ -1,5 +1,5 @@
 [tools]
-# Use ubi backend to bypass aqua artifact attestation requirement.
-# aqua:astral-sh/uv requires GitHub attestations that are not yet registered
-# for newer uv releases, causing mise install to fail on Railway/Railpack.
-"ubi:astral-sh/uv" = "0.11.9"
+# Use github backend (replaces deprecated ubi) to bypass aqua attestation
+# requirement. aqua:astral-sh/uv requires GitHub attestations not yet present
+# for newer uv releases. Railway deployment uses Dockerfile instead of mise.
+"github:astral-sh/uv" = "0.11.9"
