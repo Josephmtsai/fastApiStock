@@ -11,12 +11,11 @@
 ```mermaid
 flowchart TB
     subgraph EXT["External Dependencies"]
-        direction LR
         TG_API[["Telegram Bot API"]]
-        YF[["yfinance (Yahoo Finance)"]]
-        GSHEET[["Google Sheets<br/>(投資紀錄/計畫/歷史存檔)"]]
-        REDIS[("Redis<br/>cache + rate-limit + snapshots")]
-        PG[("Postgres<br/>portfolio_symbol_snapshots<br/>portfolio_report_summary")]
+        YF[["yfinance"]]
+        GSHEET[["Google Sheets"]]
+        REDIS[("Redis")]
+        PG[("Postgres")]
     end
 
     subgraph ENTRY["Entry / Bootstrap"]
@@ -334,7 +333,7 @@ flowchart LR
         G4[[歷史存檔 tab<br/>sheet_writer 寫入]]
     end
 
-    subgraph PG_STORE["Postgres（永久歷史）"]
+    subgraph PG_STORE["Postgres - 永久歷史"]
         DB[("portfolio_symbol_snapshots<br/>portfolio_report_summary")]
     end
 

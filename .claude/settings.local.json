@@ -84,7 +84,26 @@
       "Bash('C:\\\\Users\\\\Joseph\\\\AppData\\\\Roaming\\\\uv\\\\tools\\\\graphifyy\\\\Scripts\\\\python.exe' -c ' *)",
       "Bash(git stash *)",
       "Bash(grep -n \"redis_cache\" D:\\\\\\\\claude\\\\\\\\fastApiStock\\\\\\\\src\\\\\\\\fastapistock\\\\\\\\cache\\\\\\\\__init__.py)",
-      "Bash(grep -n \"signal_history_repo.redis_cache\\\\|portfolio_snapshot_repo.redis_cache\\\\|report_service\\\\.\" D:\\\\\\\\claude\\\\\\\\fastApiStock\\\\\\\\tests\\\\\\\\test_spec005_edge_cases.py)"
+      "Bash(grep -n \"signal_history_repo.redis_cache\\\\|portfolio_snapshot_repo.redis_cache\\\\|report_service\\\\.\" D:\\\\\\\\claude\\\\\\\\fastApiStock\\\\\\\\tests\\\\\\\\test_spec005_edge_cases.py)",
+      "Bash(docker --version)",
+      "Bash(command -v docker.exe)",
+      "Bash(command -v \"docker\")",
+      "Bash(DATABASE_URL=\"postgresql+psycopg://user:pass@localhost:5432/fastapistock\" uv run alembic check)",
+      "Bash(DATABASE_URL=\"postgresql+psycopg://user:pass@localhost:5432/dummy_does_not_exist\" uv run alembic --help)",
+      "Bash(DATABASE_URL=\"sqlite:///./_alembic_autogen.db\" uv run alembic revision --autogenerate -m \"initial snapshot tables\")",
+      "Bash(DATABASE_URL=\"sqlite:///./_alembic_verify.db\" uv run alembic upgrade head)",
+      "Bash(D:/claude/fastApiStock/.venv/Scripts/python.exe *)",
+      "Bash(docker compose *)",
+      "PowerShell(docker compose version *)",
+      "PowerShell(Get-Command *)",
+      "Bash(grep \"routers\\\\\\\\\\\\\\\\reports\")",
+      "Bash(grep -n \"transactions_repo\\\\|^### 修改\\\\|^- \\\\`src/fastapistock/repositories\" specs/006-report-history-postgres/spec.md)",
+      "Bash(git merge *)",
+      "Bash(git branch *)",
+      "Bash(uv lock *)",
+      "Bash(git push *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\claude\\\\fastApiStock\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }
