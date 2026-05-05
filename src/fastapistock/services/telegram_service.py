@@ -270,8 +270,7 @@ def _format_rich_block(stock: RichStockData) -> str:
 
     lines = [
         f'{arrow} *{_escape_md(stock.symbol)}* {_escape_md(stock.display_name)}',
-        price_line,
-        change_line,
+        f'{price_line}   {change_line.strip()}',
     ]
 
     if stock.avg_cost is not None and stock.shares is not None:
