@@ -59,7 +59,7 @@ flowchart TB
         RP_TX["transactions_repo.py"]
         RP_SNAP["portfolio_snapshot_repo.py<br/>Redis 快照"]
         RP_SIG["signal_history_repo.py<br/>Redis 快照"]
-        RP_HIST["report_history_repo.py<br/>SymbolSnapshot / ReportSummary"]
+        RP_HIST["report_history_repo.py<br/>SymbolSnapshot + ReportSummary"]
         RP_SHEET["sheet_writer.py<br/>gspread 歷史存檔"]
     end
 
@@ -138,10 +138,8 @@ flowchart TB
     RP_HIST -. SQLAlchemy .-> PG
     CACHE -. redis-py .-> REDIS
     RL -. storage .-> REDIS
-    RP_SNAP -. redis-py .-> REDIS
-    RP_SIG -. redis-py .-> REDIS
     S_TG -. httpx POST .-> TG_API
-    R_WH <-. webhook POST .- TG_API
+    TG_API -. webhook POST .-> R_WH
 
     classDef entry fill:#fde9a9,stroke:#b58900,color:#222
     classDef router fill:#c6e2ff,stroke:#268bd2,color:#073642
