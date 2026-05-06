@@ -209,8 +209,22 @@ class TestFormatRichStockMessage:
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
         msg = format_rich_stock_message([stock], 'TW', now)
         assert '損益' in msg
-        # '-35,000' should appear in the message (escaped form)
         assert '35' in msg and '000' in msg
+
+    def test_cost_and_pnl_inside_code_span_have_no_backslash(self) -> None:
+        # Inside MarkdownV2 code spans, backslash is a literal character.
+        # _escape_md must NOT be applied to values placed inside backticks,
+        # otherwise '1298.98' renders as '1298\.98' with a visible backslash.
+        import re
+
+        stock = _make_stock(avg_cost=1298.98, shares=3058, unrealized_pnl=3_181_693.0)
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+
+        # Extract every code-span content (text between backticks)
+        code_spans = re.findall(r'`([^`]+)`', msg)
+        for span in code_spans:
+            assert '\\' not in span, f'Backslash found inside code span: {span!r}'
 
     def test_portfolio_shown_for_us_stock_when_avg_cost_set(self) -> None:
         # Formatter doesn't gate on market; service guarantees US has avg_cost=None.

@@ -281,15 +281,15 @@ def _format_rich_block(stock: RichStockData) -> str:
         )
         pnl_sign = '+' if pnl_pct >= 0 else ''
         pnl_pct_esc = _escape_md(f'{pnl_sign}{pnl_pct:.2f}')
-        cost_esc = _escape_md(f'{stock.avg_cost:.2f}')
         lines.append('   ─── 持倉 ───')
         lines.append(
-            f'   持股: `{stock.shares:,}`   成本: `{cost_esc}` \\({pnl_pct_esc}%\\)'
+            f'   持股: `{stock.shares:,}`'
+            f'   成本: `{stock.avg_cost:.2f}` \\({pnl_pct_esc}%\\)'
         )
         if stock.unrealized_pnl is not None:
             pnl_abs_sign = '+' if stock.unrealized_pnl >= 0 else ''
-            pnl_abs_esc = _escape_md(f'{pnl_abs_sign}{stock.unrealized_pnl:,.0f}')
-            lines.append(f'   損益: `{pnl_abs_esc} {currency}`')
+            pnl_abs = f'{pnl_abs_sign}{stock.unrealized_pnl:,.0f}'
+            lines.append(f'   損益: `{pnl_abs} {currency}`')
 
     if stock.rsi is not None:
         rsi_tag = (
