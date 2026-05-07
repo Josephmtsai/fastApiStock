@@ -251,8 +251,12 @@ def _dispatch_message(msg: TelegramMessage) -> None:
         reply = get_pnl_reply()
     elif cmd == '/us':
         reply = _handle_us(args)
+        reply_to_chat(chat_id, reply, parse_mode='MarkdownV2')
+        return
     elif cmd == '/tw':
         reply = _handle_tw(args)
+        reply_to_chat(chat_id, reply, parse_mode='MarkdownV2')
+        return
     elif cmd == '/history':
         # /history has its own internal Telegram interactions
         # (text reply OR inline keyboard), so we delegate fully.

@@ -391,16 +391,18 @@ def reply_to_chat(
     chat_id: str,
     text: str,
     *,
+    parse_mode: str | None = None,
     reply_markup: dict[str, object] | None = None,
 ) -> bool:
-    """Send a plain-text reply to a Telegram chat.
+    """Send a reply to a Telegram chat.
 
     Used by the webhook router to respond to user commands.
     Falls back silently on error so the caller can still return HTTP 200.
 
     Args:
         chat_id: Telegram chat ID to reply to.
-        text: Plain-text message content (no parse_mode).
+        text: Message content. Must be pre-escaped when parse_mode='MarkdownV2'.
+        parse_mode: Telegram parse mode (e.g. 'MarkdownV2'). None sends plain text.
         reply_markup: Optional Telegram reply markup payload (e.g. an
             ``inline_keyboard``). When supplied it is forwarded verbatim.
 
@@ -413,6 +415,8 @@ def reply_to_chat(
 
     url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/sendMessage'
     payload: dict[str, object] = {'chat_id': chat_id, 'text': text}
+    if parse_mode is not None:
+        payload['parse_mode'] = parse_mode
     if reply_markup is not None:
         payload['reply_markup'] = reply_markup
 

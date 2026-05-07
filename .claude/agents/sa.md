@@ -64,6 +64,9 @@ tools:
 使用者需求
     │
     ▼
+[0] 識別問題類型（CICD 問題 → 直接轉交 cicd agent，跳過後續步驟）
+    │
+    ▼
 [1] 釐清需求（追問 5W1H）
     │
     ▼
@@ -81,6 +84,20 @@ tools:
     ▼
 [6] 轉交 developer agent（禁止自行實作業務邏輯）
 ```
+
+### CICD 問題識別與路由
+
+**遇到下列任一情況，立即呼叫 `cicd` agent，不進行 spec 分析：**
+
+- Railway build 失敗（log 顯示 Nixpacks / Dockerfile / uv / hatchling 錯誤）
+- GitHub Actions workflow 失敗（CI lint、test、deploy job 錯誤）
+- `railway up` 指令失敗或 deploy 無法觸發
+- Docker build context / `.dockerignore` 問題
+- Secrets / 環境變數缺失導致 CI/CD 失敗
+- workflow YAML 語法錯誤
+
+**識別關鍵字**（任一出現即路由至 cicd agent）：
+`Railway`、`GitHub Actions`、`workflow`、`Dockerfile`、`docker build`、`railway up`、`CI failed`、`deploy failed`、`Nixpacks`、`RAILWAY_TOKEN`、`build log`
 
 ---
 
