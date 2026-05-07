@@ -1,9 +1,11 @@
+FROM ghcr.io/astral-sh/uv:0.11.9 AS uv-bin
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install uv via pip — bypasses mise/aqua/attestation entirely
-RUN pip install --no-cache-dir uv==0.11.9
+# Copy uv binary from official image — avoids pip/PyPI download entirely
+COPY --from=uv-bin /uv /uvx /usr/local/bin/
 
 # Copy dependency manifests first for layer caching
 COPY pyproject.toml uv.lock .python-version README.md ./
