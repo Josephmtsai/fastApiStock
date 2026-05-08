@@ -103,7 +103,9 @@
       "Bash(uv lock *)",
       "Bash(git push *)",
       "Bash(Get-ChildItem -Path \"D:\\\\claude\\\\fastApiStock\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(Test-Path \"graphify-out/.graphify_chunk_01.json\" ; if \\(Test-Path \"graphify-out/.graphify_chunk_01.json\"\\) { $f = Get-Content \"graphify-out/.graphify_chunk_01.json\" | ConvertFrom-Json; Write-Host \"Chunk 01: nodes=$\\($f.nodes.Count\\) edges=$\\($f.edges.Count\\)\" })",
+      "PowerShell(Copy-Item *)"
     ]
   }
 }
