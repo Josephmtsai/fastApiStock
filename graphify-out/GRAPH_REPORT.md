@@ -207,7 +207,7 @@ Nodes (2): Decision: setWebhook Called Once Manually (Not at Startup), Rationale
 
 ### Community 28 - "Module Initializer"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 29 - "Technical Indicators"
 Cohesion: 1.0
