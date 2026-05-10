@@ -6,6 +6,7 @@ middleware and exception handlers. Zero business logic lives here.
 
 import logging
 import logging.config
+import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -15,7 +16,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from fastapistock.config import DATABASE_URL, TELEGRAM_TOKEN
+from fastapistock.config import (
+    DATABASE_URL,
+    ENVIRONMENT,
+    LOG_FORMAT,
+    LOGTAIL_SOURCE_TOKEN,
+    SERVICE_NAME,
+    TELEGRAM_TOKEN,
+)
+from fastapistock.core.json_formatter import StructuredJsonFormatter
 from fastapistock.exceptions import register_exception_handlers
 from fastapistock.middleware.logging import LoggingMiddleware
 from fastapistock.middleware.rate_limit import get_limiter
@@ -30,32 +39,51 @@ from fastapistock.routers import (
 )
 from fastapistock.scheduler import build_scheduler
 
-_LOGGING_CONFIG = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'default': {
-            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'default',
-        },
-    },
-    'root': {
-        'level': 'INFO',
-        'handlers': ['console'],
-    },
-    'loggers': {
-        # httpx logs full URLs which include the Telegram bot token — suppress.
-        'httpx': {'level': 'WARNING', 'propagate': True},
-        'httpcore': {'level': 'WARNING', 'propagate': True},
-    },
-}
+_LOG_LEVEL: str = os.getenv('LOG_LEVEL', 'INFO')
 
-logging.config.dictConfig(_LOGGING_CONFIG)
+
+def _build_logging_config() -> dict[str, object]:
+    """Build the dictConfig payload based on the ``LOG_FORMAT`` env var.
+
+    Returns:
+        A ``logging.config.dictConfig``-compatible dictionary.
+    """
+    if LOG_FORMAT == 'json':
+        formatter_config: dict[str, object] = {
+            '()': StructuredJsonFormatter,
+            'service': SERVICE_NAME,
+            'environment': ENVIRONMENT,
+        }
+    else:
+        formatter_config = {
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        }
+
+    return {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'default': formatter_config,
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'default',
+            },
+        },
+        'root': {
+            'level': _LOG_LEVEL,
+            'handlers': ['console'],
+        },
+        'loggers': {
+            # httpx logs full URLs which include the Telegram bot token — suppress.
+            'httpx': {'level': 'WARNING', 'propagate': True},
+            'httpcore': {'level': 'WARNING', 'propagate': True},
+        },
+    }
+
+
+logging.config.dictConfig(_build_logging_config())
 _logger = logging.getLogger(__name__)
 
 _RATE_LIMIT_EXEMPT = {'/health'}
@@ -156,6 +184,24 @@ class _RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
         return await call_next(request)
 
 
+def _attach_logtail_handler() -> None:
+    """Attach a LogtailHandler to the root logger when token is configured.
+
+    Runs at application startup. When ``LOGTAIL_SOURCE_TOKEN`` is empty the
+    function is a no-op and existing behaviour is unchanged.
+    """
+    if not LOGTAIL_SOURCE_TOKEN:
+        return
+    try:
+        from logtail import LogtailHandler
+
+        logtail_handler = LogtailHandler(source_token=LOGTAIL_SOURCE_TOKEN)
+        logging.getLogger().addHandler(logtail_handler)
+        _logger.info('LogtailHandler attached (Better Stack forwarding enabled)')
+    except Exception as exc:
+        _logger.warning('Failed to attach LogtailHandler: %s', exc)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage APScheduler lifecycle tied to the FastAPI application.
@@ -169,6 +215,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Yields:
         Control to the running application.
     """
+    _attach_logtail_handler()
     scheduler = build_scheduler()
     scheduler.start()
     _logger.info('APScheduler started')
