@@ -1,0 +1,18 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "007-structured-logging",
+  "status": "ready",
+  "summary": "設計結構化日誌整合方案，採用 logtail-python 直送 Better Stack，FastAPI 透過 LogtailHandler 非同步輸出 JSON log",
+  "artifacts": [
+    "specs/007-structured-logging/spec.md",
+    "specs/007-structured-logging/tasks.md",
+    "specs/007-structured-logging/local-setup.md"
+  ],
+  "assumptions": [
+    "Railway Hobby plan 不支援 Log Drain，採用 logtail-python SDK 直送",
+    "Better Stack 免費版 1GB/月 對此規模足夠",
+    "本地開發 LOGTAIL_SOURCE_TOKEN 留空，不需要外部服務",
+    "不動 tests/ 下現有 log 輸出行為"
+  ]
+}

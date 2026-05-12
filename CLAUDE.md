@@ -44,6 +44,65 @@
 - **Pre-commit**: 本地必須啟用 `pre-commit`。`git commit` 前必須通過所有 Hooks (Ruff, Mypy, Secrets)。
   - 指令: `uv run pre-commit run --all-files`
 
+## 7. Agent Workflow & Handoff Protocol
+
+### 流程
+
+```
+SA  ──handoff-sa.json──▶  Developer  ──handoff-dev.json──▶  QA
+```
+
+### 強制規則（Orchestrator 必須遵守）
+
+1. **Developer 完成後，必須自動 spawn QA agent，不需等使用者要求。**
+2. SA 完成後才能啟動 Developer（`handoff-sa.json` 的 `status` 必須為 `ready`）。
+3. QA 完成後回報使用者，不自動 merge 或 deploy。
+
+### Handoff JSON 格式
+
+存放路徑：`specs/<feature>/handoff-<from>.json`
+
+```json
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "007-structured-logging",
+  "status": "ready",
+  "summary": "一句話說明做了什麼",
+  "artifacts": ["specs/.../spec.md", "specs/.../tasks.md"],
+  "assumptions": ["假設一", "假設二"]
+}
+```
+
+Developer 完成時額外加入：
+
+```json
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "007-structured-logging",
+  "status": "ready",
+  "summary": "實作了 StructuredJsonFormatter、改造 LoggingMiddleware",
+  "changed_files": ["src/fastapistock/core/json_formatter.py", "src/fastapistock/main.py"],
+  "ac_ref": "specs/007-structured-logging/tasks.md"
+}
+```
+
+### Context Package（各 agent 只讀需要的）
+
+| 接收方 | 必讀 | 不需要 |
+|--------|------|--------|
+| Developer | handoff-sa.json + artifacts 列出的所有文件 | 無限制 |
+| QA | handoff-dev.json（ac_ref + changed_files）+ tasks.md 的 AC 區塊 | 架構決策、ADR、local-setup.md |
+
+### 每個 Agent 的完成義務
+
+- **SA**：產出 `handoff-sa.json`，artifacts 必須列出所有 spec 文件路徑
+- **Developer**：產出 `handoff-dev.json`，changed_files 必須完整列出，並告知 orchestrator 可以 spawn QA
+- **QA**：不產出 handoff，直接以測試報告回報 orchestrator
+
+---
+
 ## 6. 知識圖譜 (Knowledge Graph)
 專案已建立 graphify 知識圖譜，位於 `graphify-out/graph.json`（786 nodes、1552 edges、30 communities）。
 

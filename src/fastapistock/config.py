@@ -68,6 +68,14 @@ GOOGLE_SHEETS_HISTORY_GID_TW: int | None = _optional_int('GOOGLE_SHEETS_HISTORY_
 GOOGLE_SHEETS_HISTORY_GID_US: int | None = _optional_int('GOOGLE_SHEETS_HISTORY_GID_US')
 ADMIN_TOKEN: str | None = os.getenv('ADMIN_TOKEN') or None
 
+# ---------------------------------------------------------------------------
+# Spec 007: Structured logging (Better Stack / python-json-logger)
+# ---------------------------------------------------------------------------
+LOGTAIL_SOURCE_TOKEN: str = os.getenv('LOGTAIL_SOURCE_TOKEN', '')
+LOG_FORMAT: str = os.getenv('LOG_FORMAT', 'json')
+SERVICE_NAME: str = os.getenv('SERVICE_NAME', 'fastapistock')
+ENVIRONMENT: str = os.getenv('ENVIRONMENT', 'production')
+
 
 def tw_stock_codes() -> list[str]:
     """Parse TW_STOCKS env var into a list of Taiwan stock codes.

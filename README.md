@@ -20,3 +20,8 @@ uv run ruff check --fix && uv run ruff format
 
 # 執行測試
 uv run pytest tests/ --cov=src
+
+
+# Api
+
+https://fastapistock-production-cb77.up.railway.app/docs

@@ -1,10 +1,11 @@
 """Structured request/response/performance logging middleware.
 
-Emits three log lines per request:
+Emits three log lines per request using ``extra={}`` to carry structured
+fields so JSON formatters can serialise each field as a top-level JSON key:
 
-  REQ  {DateTime} {pid} {method_name} {client_ip} {http_method} REQ {request_data}
-  RES  {DateTime} {pid} {method_name} {client_ip} {http_method} RES {status} {body}
-  PERF {DateTime} {pid} {method_name} PERF {elapsed_ms}ms
+  REQ  — one record per incoming request with route, method, params.
+  RES  — one record per response with status code and truncated body.
+  PERF — one record per request cycle with elapsed time in milliseconds.
 
 Log level follows HTTP status: 2xx → INFO, 4xx → WARNING, 5xx → ERROR.
 PERF is always INFO.
@@ -140,47 +141,81 @@ class LoggingMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
         Returns:
             The unmodified response from the handler.
         """
-        ip = _client_ip(request)
+        pid = _PID
+        client_ip = _client_ip(request)
         method = request.method
-        req_data = _request_data(request)
+        route_name = _route_name(request)
+        path_params = dict(request.path_params)
+        query_params = str(request.query_params)
+
+        masked_query = _mask_sensitive(query_params)
+        masked_path = _mask_sensitive(str(path_params))
 
         _logger.info(
-            '%d %s %s %s REQ %s',
-            _PID,
-            _route_name(request),
-            ip,
-            method,
-            req_data,
+            'REQ %s %s %s %s',
+            pid,
+            route_name,
+            client_ip,
+            masked_query or masked_path,
+            extra={
+                'log_type': 'REQ',
+                'pid': pid,
+                'route': route_name,
+                'method': method,
+                'client_ip': client_ip,
+                'path_params': masked_path,
+                'query_params': masked_query,
+            },
         )
 
         start = time.perf_counter()
         response = await call_next(request)
-        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        elapsed_ms = (time.perf_counter() - start) * 1000
 
         # Buffer the body so we can log it without consuming the stream.
         body = b''
         async for chunk in response.body_iterator:  # type: ignore[attr-defined]
             body += chunk if isinstance(chunk, bytes) else chunk.encode()
 
-        status = response.status_code
+        status_code = response.status_code
         res_text = _mask_sensitive(_truncate(body))
+        # Re-resolve route name after routing is complete.
+        route_name = _route_name(request)
 
         _logger.log(
-            _level(status),
-            '%d %s %s %s RES %d %s',
-            _PID,
-            _route_name(request),
-            ip,
-            method,
-            status,
+            _level(status_code),
+            'RES %d %s',
+            status_code,
             res_text,
+            extra={
+                'log_type': 'RES',
+                'pid': pid,
+                'route': route_name,
+                'method': method,
+                'client_ip': client_ip,
+                'status_code': status_code,
+                'body': res_text,
+            },
         )
-        _logger.info('%d %s PERF %dms', _PID, _route_name(request), elapsed_ms)
+
+        _logger.info(
+            'PERF %dms',
+            int(round(elapsed_ms)),
+            extra={
+                'log_type': 'PERF',
+                'pid': pid,
+                'route': route_name,
+                'method': method,
+                'status_code': status_code,
+                'duration_ms': int(round(elapsed_ms)),
+                'client_ip': client_ip,
+            },
+        )
 
         # Rebuild the response with the buffered body.
         return Response(
             content=body,
-            status_code=status,
+            status_code=status_code,
             headers=dict(response.headers),
             media_type=response.media_type,
         )

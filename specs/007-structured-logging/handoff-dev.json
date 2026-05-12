@@ -1,0 +1,17 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "007-structured-logging",
+  "status": "ready",
+  "summary": "實作 StructuredJsonFormatter（含 extra 欄位序列化）、改造 LoggingMiddleware 為 extra={} 傳遞、lifespan 掛載 LogtailHandler、config.py 加入新環境變數",
+  "changed_files": [
+    "src/fastapistock/core/json_formatter.py",
+    "src/fastapistock/main.py",
+    "src/fastapistock/middleware/logging.py",
+    "src/fastapistock/config.py",
+    ".env.example",
+    "pyproject.toml",
+    "tests/test_json_formatter.py"
+  ],
+  "ac_ref": "specs/007-structured-logging/tasks.md"
+}
