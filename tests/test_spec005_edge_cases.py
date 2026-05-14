@@ -1033,12 +1033,13 @@ class TestSchedulerCronConfig:
         assert fields['hour'] == '21'
         assert fields['minute'] == '0'
 
-    def test_monthly_report_job_exists_with_day1_2100_trigger(self) -> None:
+    def test_monthly_report_job_exists_with_first_sunday_2100_trigger(self) -> None:
         scheduler = build_scheduler()
         job = scheduler.get_job('monthly_report')
         assert job is not None
         fields = {f.name: str(f) for f in job.trigger.fields}
-        assert fields['day'] == '1'
+        assert fields['day'] == '1-7'
+        assert fields['day_of_week'] == 'sun'
         assert fields['hour'] == '21'
         assert fields['minute'] == '0'
 
