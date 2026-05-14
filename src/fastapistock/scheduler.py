@@ -155,9 +155,11 @@ def build_scheduler() -> AsyncIOScheduler:
     )
     scheduler.add_job(
         partial(run_report_pipeline, report_type='monthly', trigger='cron'),
-        trigger=CronTrigger(day=1, hour=21, minute=0, timezone=str(_TZ)),
+        trigger=CronTrigger(
+            day_of_week='sun', day='1-7', hour=21, minute=0, timezone=str(_TZ)
+        ),
         id='monthly_report',
-        name='Monthly portfolio report',
+        name='Monthly portfolio report (first Sunday)',
         replace_existing=True,
     )
     return scheduler
