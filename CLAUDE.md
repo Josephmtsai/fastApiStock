@@ -49,14 +49,16 @@
 ### 流程
 
 ```
-SA  ──handoff-sa.json──▶  Developer  ──handoff-dev.json──▶  QA
+SA  ──handoff-sa.json──▶  Developer  ──spawn──▶  codex-reviewer  ──PASS──▶  QA
+                                                                  ──FAIL──▶  Developer (修正)
 ```
 
 ### 強制規則（Orchestrator 必須遵守）
 
-1. **Developer 完成後，必須自動 spawn QA agent，不需等使用者要求。**
-2. SA 完成後才能啟動 Developer（`handoff-sa.json` 的 `status` 必須為 `ready`）。
-3. QA 完成後回報使用者，不自動 merge 或 deploy。
+1. **Developer 完成後，必須先 spawn codex-reviewer agent，等 review PASS 才能 spawn QA。**
+2. **codex-reviewer 回報 FAIL 時，必須回到 Developer 修正，禁止直接 spawn QA。**
+3. SA 完成後才能啟動 Developer（`handoff-sa.json` 的 `status` 必須為 `ready`）。
+4. QA 完成後回報使用者，不自動 merge 或 deploy。
 
 ### Handoff JSON 格式
 
@@ -98,7 +100,8 @@ Developer 完成時額外加入：
 ### 每個 Agent 的完成義務
 
 - **SA**：產出 `handoff-sa.json`，artifacts 必須列出所有 spec 文件路徑
-- **Developer**：產出 `handoff-dev.json`，changed_files 必須完整列出，並告知 orchestrator 可以 spawn QA
+- **Developer**：產出 `handoff-dev.json`，changed_files 必須完整列出，告知 orchestrator 可以 spawn **codex-reviewer**（不是直接 spawn QA）
+- **codex-reviewer**：產出 review report，回報 PASS/FAIL verdict，PASS 才告知 orchestrator 可以 spawn QA
 - **QA**：不產出 handoff，直接以測試報告回報 orchestrator
 
 ---
