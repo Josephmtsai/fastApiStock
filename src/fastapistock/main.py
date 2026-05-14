@@ -90,8 +90,10 @@ _RATE_LIMIT_EXEMPT = {'/health'}
 
 _BOT_COMMANDS = [
     {'command': 'q', 'description': '本季投資達成率'},
+    {'command': 'pnl', 'description': '投資組合未實現損益（台股＋美股）'},
     {'command': 'us', 'description': '美股報價，例：/us AAPL,TSLA'},
     {'command': 'tw', 'description': '台股報價，例：/tw 0050,2330'},
+    {'command': 'history', 'description': '查詢歷史報告（互動選單）'},
     {'command': 'help', 'description': '顯示所有指令說明'},
 ]
 

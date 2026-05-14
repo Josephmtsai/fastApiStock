@@ -1,0 +1,18 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "009-telegram-command-menu",
+  "status": "ready",
+  "summary": "新增 /pnl 與 /history 至 main.py 的 _BOT_COMMANDS 串列，使 Telegram 快速選單顯示完整 6 個指令；同步更新架構文件序列圖標籤",
+  "artifacts": [
+    "specs/009-telegram-command-menu/spec.md",
+    "specs/009-telegram-command-menu/tasks.md"
+  ],
+  "assumptions": [
+    "_BOT_COMMANDS 僅為純資料串列，修改不影響任何業務邏輯",
+    "setMyCommands 為冪等操作，重複部署不造成副作用",
+    "/pnl 與 /history 的 webhook handler 及 service 實作均已完整，不需修改",
+    "指令排序採用：常用查詢在前（q, pnl, us, tw, history），help 永遠最後",
+    "說明文字沿用 _HELP_TEXT 中已驗證的中文描述"
+  ]
+}

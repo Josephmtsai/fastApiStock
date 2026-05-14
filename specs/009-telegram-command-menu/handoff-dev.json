@@ -1,0 +1,13 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "009-telegram-command-menu",
+  "status": "ready",
+  "summary": "新增 pnl 與 history 至 _BOT_COMMANDS，更新架構文件，新增單元測試",
+  "changed_files": [
+    "src/fastapistock/main.py",
+    "docs/architecture.md",
+    "tests/test_spec009_bot_commands.py"
+  ],
+  "ac_ref": "specs/009-telegram-command-menu/tasks.md"
+}

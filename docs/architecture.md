@@ -199,8 +199,7 @@ sequenceDiagram
     Main->>Routers: include webhook / reports
     Uvicorn->>Life: startup
     Life->>Sched: build_scheduler().start()
-    Life->>TG: POST setMyCommands (q/us/tw/help)
-    Note over Life: /pnl 與 /history 透過 webhook 支援，但未顯示於 bot menu
+    Life->>TG: POST setMyCommands (q/pnl/us/tw/history/help)
     Note over Life: yield → serving requests
     Uvicorn->>Life: shutdown
     Life->>Sched: scheduler.shutdown(wait=False)
