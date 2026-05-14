@@ -110,7 +110,16 @@
       "PowerShell(Rename-Item *)",
       "Bash(Set-Location \"D:\\\\claude\\\\fastApiStock\")",
       "Bash(/d/claude/fastApiStock/.venv/Scripts/python.exe -c \"import pythonjsonlogger\")",
-      "Bash(uv pip *)"
+      "Bash(uv pip *)",
+      "Bash(npx --yes codex --version)",
+      "Bash(npx codex *)",
+      "Bash(codex *)",
+      "mcp__codex__codex",
+      "mcp__codex__codex-reply",
+      "Skill(codex:setup)",
+      "Skill(codex:rescue)",
+      "Bash(git rm *)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": false
 }
