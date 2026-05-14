@@ -1,0 +1,17 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "008-sunday-monthly-report",
+  "status": "ready",
+  "summary": "將月報排程從「每月 1 日 21:00」改為「每月第一個周日 21:00」，與週報同時段發出",
+  "artifacts": [
+    "specs/008-sunday-monthly-report/spec.md",
+    "specs/008-sunday-monthly-report/tasks.md"
+  ],
+  "assumptions": [
+    "月報延後最多 6 天（若 1 日為周一）可被接受",
+    "兩則訊息維持獨立發送，不合併為單一 Telegram 訊息",
+    "_monthly_window() 以 now 計算上個月的邏輯不需修改",
+    "首次切換若有漏發，使用者自行呼叫 POST /api/v1/reports/monthly/send 補發"
+  ]
+}

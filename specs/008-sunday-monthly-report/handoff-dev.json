@@ -1,0 +1,9 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "008-sunday-monthly-report",
+  "status": "ready",
+  "summary": "將 monthly_report job 的 CronTrigger 改為 day_of_week='sun', day='1-7'",
+  "changed_files": ["src/fastapistock/scheduler.py"],
+  "ac_ref": "specs/008-sunday-monthly-report/tasks.md"
+}

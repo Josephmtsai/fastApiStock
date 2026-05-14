@@ -258,3 +258,47 @@ class TestBuildScheduler:
             'report_type': 'monthly',
             'trigger': 'cron',
         }
+
+
+class TestMonthlyReportTrigger:
+    """Verify the monthly_report job uses the first-Sunday CronTrigger (008)."""
+
+    def _get_monthly_trigger(self) -> object:
+        scheduler = build_scheduler()
+        monthly_job = next(j for j in scheduler.get_jobs() if j.id == 'monthly_report')
+        return monthly_job.trigger
+
+    def test_monthly_trigger_has_day_of_week_sun(self) -> None:
+        """day_of_week field must be 'sun' (every Sunday)."""
+        trigger = self._get_monthly_trigger()
+        fields = {f.name: f for f in trigger.fields}  # type: ignore[attr-defined]
+        assert str(fields['day_of_week']) == 'sun'
+
+    def test_monthly_trigger_has_day_range_1_to_7(self) -> None:
+        """day field must restrict to 1-7 so only the first Sunday fires."""
+        trigger = self._get_monthly_trigger()
+        fields = {f.name: f for f in trigger.fields}  # type: ignore[attr-defined]
+        assert str(fields['day']) == '1-7'
+
+    def test_monthly_trigger_has_no_day_equals_1_only(self) -> None:
+        """The old trigger used day=1; the new trigger must not match only day=1."""
+        trigger = self._get_monthly_trigger()
+        fields = {f.name: f for f in trigger.fields}  # type: ignore[attr-defined]
+        # day field should be the range expression '1-7', not a single '1'
+        assert str(fields['day']) != '1'
+
+    def test_monthly_job_name_updated(self) -> None:
+        """Job name must reflect first-Sunday semantics."""
+        scheduler = build_scheduler()
+        monthly_job = next(j for j in scheduler.get_jobs() if j.id == 'monthly_report')
+        assert 'first Sunday' in monthly_job.name
+
+    def test_weekly_trigger_unchanged(self) -> None:
+        """Modifying monthly trigger must not affect the weekly_report trigger."""
+        scheduler = build_scheduler()
+        weekly_job = next(j for j in scheduler.get_jobs() if j.id == 'weekly_report')
+        fields = {f.name: f for f in weekly_job.trigger.fields}  # type: ignore[attr-defined]
+        # Weekly job fires every Sunday without a day restriction
+        assert str(fields['day_of_week']) == 'sun'
+        # The weekly trigger should NOT have a day restriction of 1-7
+        assert str(fields['day']) == '*'
