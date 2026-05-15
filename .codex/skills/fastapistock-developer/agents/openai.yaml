@@ -1,0 +1,6 @@
+interface:
+  display_name: "FastApiStock Developer"
+  short_description: "Implement backend features under project rules."
+  default_prompt: "Use $fastapistock-developer to implement this approved fastApiStock handoff."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "FastApiStock QA"
+  short_description: "Design tests and verify acceptance criteria."
+  default_prompt: "Use $fastapistock-qa to test this reviewed fastApiStock implementation."
+policy:
+  allow_implicit_invocation: true

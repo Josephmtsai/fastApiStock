@@ -1,0 +1,6 @@
+interface:
+  display_name: "FastApiStock CI/CD"
+  short_description: "Diagnose Railway, Docker, and GitHub Actions issues."
+  default_prompt: "Use $fastapistock-cicd to diagnose this CI/CD failure."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "FastApiStock SA"
+  short_description: "Analyze requirements and prepare spec handoffs."
+  default_prompt: "Use $fastapistock-sa to clarify this feature and produce a spec-kit handoff."
+policy:
+  allow_implicit_invocation: true
