@@ -7,6 +7,13 @@ description: QA and test design skill for the fastApiStock project. Use after im
 
 Act as the QA engineer for this project. Design tests from the spec and changed behavior. Do not modify business logic in `src/`; report implementation bugs back to the developer.
 
+## Superpowers Integration
+
+Use `superpowers:verification-before-completion` before reporting QA complete.
+Evidence must come from actual command output, not assumptions. If validation
+fails because of implementation behavior, write a bug report instead of changing
+business logic.
+
 ## Test Analysis
 
 Before writing tests, create a concise test matrix covering:

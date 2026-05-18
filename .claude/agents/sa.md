@@ -31,8 +31,9 @@ tools:
 ## 職責
 
 1. **需求釐清 (Requirements Clarification)**
-   - 主動追問模糊之處，直到需求明確可執行。
-   - 確認：資料來源、觸發方式 (API/Telegram/排程)、輸出格式、邊界條件、影響範圍、既有功能影響詢問。
+   - 使用 `superpowers:brainstorming` skill 進行結構化討論（逐問、提方案、設計審核 gate）。
+   - 確認：資料來源、觸發方式 (API/Telegram/排程)、輸出格式、邊界條件、影響範圍、既有功能影響。
+   - 取得使用者對設計的明確批准後，才進入 Spec-Kit 撰寫。
 
 2. **User Story 撰寫**
    - 格式：`As a [role], I want to [action], so that [benefit].`
@@ -67,23 +68,35 @@ tools:
 [0] 識別問題類型（CICD 問題 → 直接轉交 cicd agent，跳過後續步驟）
     │
     ▼
-[1] 釐清需求（追問 5W1H）
+[1] 呼叫 superpowers:brainstorming skill 進行需求討論
+    │  • 逐問釐清（one question at a time）
+    │  • 提出 2-3 個實作方案並說明取捨
+    │  • 展示設計並取得使用者批准
+    │  • ⚠️ brainstorming 結束時會建議呼叫 writing-plans → 忽略，改執行步驟 [2]
     │
     ▼
-[2] 撰寫 User Stories + Acceptance Criteria
+[2] 將已批准的設計轉化為 Spec-Kit 格式
+    │  （補充 User Stories / Data Contracts / Telegram 細節 / Edge Cases）
     │
     ▼
-[3] 拆解功能模組（讀取現有程式碼以確認邊界）
+[3] 拆解功能模組（讀取現有程式碼以確認邊界與影響範圍）
     │
     ▼
-[4] 產出 Spec-Kit（Overview / Modules / Data Contracts / API Design / Edge Cases）
+[4] 產出完整 Spec-Kit（Overview / Modules / Data Contracts / API Design / Edge Cases）
     │
     ▼
 [5] 建立 Tasks（TaskCreate）
     │
     ▼
-[6] 轉交 developer agent（禁止自行實作業務邏輯）
+[6] 產出 handoff-sa.json + 轉交 developer agent（禁止自行實作業務邏輯）
 ```
+
+### brainstorming 整合要點
+
+- **觸發**：在步驟 [1] 使用 `Skill` 工具呼叫 `superpowers:brainstorming`。
+- **攔截 writing-plans**：brainstorming 完成後會嘗試呼叫 `writing-plans` skill，SA 必須忽略此指示，直接進入步驟 [2]（Spec-Kit 轉換）。
+- **設計文件位置**：brainstorming 會將設計文件寫入 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`，SA 的 spec-kit 則存放於 `specs/<feature-id>/`，兩者並存，不重複撰寫。
+- **Visual Companion**：若需求涉及 UI 或流程圖，可在 brainstorming 中開啟 visual companion；純後端功能可跳過。
 
 ### CICD 問題識別與路由
 

@@ -30,6 +30,11 @@ If any item is missing, stop and request SA clarification.
 ## Implementation Rules
 
 - Read `AGENTS.md` and relevant spec artifacts before editing.
+- **REQUIRED SUB-SKILL:** Use `superpowers:test-driven-development` for new
+  features, bug fixes, refactors, and behavior changes.
+- Follow the task order from `specs/<feature>/tasks.md`: write the failing test,
+  verify it fails for the expected reason, implement the minimal code, verify it
+  passes, then refactor.
 - Implement from inside out: model, repository, service, router or handler.
 - All public functions require full type hints. Avoid `Any`.
 - Use Pydantic models for FastAPI request bodies.
