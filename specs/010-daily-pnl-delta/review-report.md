@@ -23,15 +23,14 @@ PASS
 | File | Line | Severity | Issue |
 | --- | --- | --- | --- |
 | `src/fastapistock/scheduler.py` | previous trading-date helpers | INFO | Initial review found weekend handling was missing for previous-close lookup. Developer added weekday-skip logic and regression tests. |
-| `src/fastapistock/services/portfolio_service.py` | `format_daily_pnl_delta` missing-baseline branch | INFO | Follow-up review found unavailable current PnL could be shown as `+0 TWD` or a partial total. Developer added regression tests and now reports current total unavailable unless both current TW and US PnL are present. |
+| `src/fastapistock/services/portfolio_service.py` | `format_market_daily_pnl_delta` unavailable-current branch | INFO | Follow-up review found unavailable current PnL could be shown as `+0 TWD` or a partial total in the old total formatter. Developer replaced the formatter with market-specific output and added regression tests so unavailable current PnL is reported explicitly. |
+| `src/fastapistock/scheduler.py` | `_scheduled_push` | INFO | Requirement changed from cross-market total comparison to active-market-only comparison. Developer updated scheduler calls so TW pushes request TW deltas and US pushes request US deltas. |
 
 ## Project Rule Violations
 
 - No blocking rule violations found.
-- `uv run pre-commit run --all-files` fails only on `no-commit-to-branch`
-  because the workspace is currently on the protected `main` branch. Ruff,
-  ruff-format, mypy, JSON/YAML/TOML checks, merge-conflict check, large-file
-  check, and private-key detection all passed.
+- Latest market-specific implementation still needs final QA validation after
+  full formatting, test, and pre-commit runs.
 
 ## Recommendation
 

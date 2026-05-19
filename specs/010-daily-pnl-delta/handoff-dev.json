@@ -3,7 +3,7 @@
   "to": "qa",
   "feature": "010-daily-pnl-delta",
   "status": "ready",
-  "summary": "Implemented daily TW/US market-close PnL snapshots, scheduled close capture jobs, and scheduled PnL delta messages after quote pushes.",
+  "summary": "Implemented daily TW/US market-close PnL snapshots, scheduled close capture jobs, and market-specific scheduled PnL delta messages after quote pushes.",
   "changed_files": [
     "src/fastapistock/repositories/portfolio_snapshot_repo.py",
     "src/fastapistock/scheduler.py",

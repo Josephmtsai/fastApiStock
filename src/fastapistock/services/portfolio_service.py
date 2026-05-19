@@ -58,66 +58,42 @@ def _fmt_twd(value: float) -> str:
     return f'{sign}{abs(value):,.0f} TWD'
 
 
-def format_daily_pnl_delta(
+def format_market_daily_pnl_delta(
     *,
-    current_tw: float | None,
-    current_us: float | None,
-    previous_tw: float | None,
-    previous_us: float | None,
+    market: str,
+    current_pnl: float | None,
+    previous_pnl: float | None,
 ) -> str:
-    """Format daily PnL delta versus previous market-close baselines.
+    """Format one market's daily PnL delta versus its previous close baseline.
 
     Args:
-        current_tw: Current TW total PnL in TWD.
-        current_us: Current US total PnL in TWD.
-        previous_tw: TW previous-close baseline PnL in TWD.
-        previous_us: US previous-close baseline PnL in TWD.
+        market: Market code, either ``TW`` or ``US``.
+        current_pnl: Current market total PnL in TWD.
+        previous_pnl: Market previous-close baseline PnL in TWD.
 
     Returns:
         Plain-text Telegram message body.
+
+    Raises:
+        ValueError: If market is not TW or US.
     """
-    lines = ['Portfolio PnL vs previous close', '']
-    current_total = sum(
-        value for value in (current_tw, current_us) if value is not None
-    )
+    normalized = market.strip().upper()
+    if normalized not in {'TW', 'US'}:
+        raise ValueError(f'Unsupported market: {market}')
 
-    if previous_tw is None and previous_us is None:
-        lines.append('No previous-close baseline yet.')
-        if current_tw is None or current_us is None:
-            lines.append(
-                'Current total unavailable until both markets have current PnL.'
-            )
-            return '\n'.join(lines)
-        lines.append(f'Current total: {_fmt_twd(current_total)}')
+    lines = [f'{normalized} PnL vs previous close', '']
+    if current_pnl is None:
+        lines.append(f'{normalized} current PnL unavailable.')
         return '\n'.join(lines)
 
-    if current_tw is not None and previous_tw is not None:
-        lines.append(f'TW: {_fmt_twd(current_tw - previous_tw)}')
-    else:
-        lines.append('TW: current PnL or baseline unavailable')
-
-    if current_us is not None and previous_us is not None:
-        lines.append(f'US: {_fmt_twd(current_us - previous_us)}')
-    else:
-        lines.append('US: current PnL or baseline unavailable')
-
-    lines.append('')
-    if (
-        current_tw is None
-        or current_us is None
-        or previous_tw is None
-        or previous_us is None
-    ):
-        lines.append(
-            'Total delta unavailable until both markets have current PnL and baselines.'
-        )
+    if previous_pnl is None:
+        lines.append(f'No {normalized} previous-close baseline yet.')
+        lines.append(f'Current: {_fmt_twd(current_pnl)}')
         return '\n'.join(lines)
 
-    previous_total = previous_tw + previous_us
-    total_delta = current_total - previous_total
-    lines.append(f'Total: {_fmt_twd(total_delta)}')
-    lines.append(f'Current total: {_fmt_twd(current_total)}')
-    lines.append(f'Previous close baseline: {_fmt_twd(previous_total)}')
+    lines.append(f'Current: {_fmt_twd(current_pnl)}')
+    lines.append(f'Previous close: {_fmt_twd(previous_pnl)}')
+    lines.append(f'Change: {_fmt_twd(current_pnl - previous_pnl)}')
     return '\n'.join(lines)
 
 
@@ -160,25 +136,36 @@ def save_daily_close_snapshot(
 
 def get_daily_pnl_delta_reply(
     *,
-    tw_trading_date: str,
-    us_trading_date: str,
+    market: str,
+    trading_date: str,
 ) -> str:
-    """Build daily PnL delta text using current PnL and close baselines.
+    """Build one market's daily PnL delta text.
 
     Args:
-        tw_trading_date: TW baseline trading date in ``YYYY-MM-DD`` format.
-        us_trading_date: US baseline trading date in ``YYYY-MM-DD`` format.
+        market: Market code, either ``TW`` or ``US``.
+        trading_date: Baseline trading date in ``YYYY-MM-DD`` format.
 
     Returns:
         Plain-text Telegram message body.
+
+    Raises:
+        ValueError: If market is not TW or US.
     """
-    current_tw = fetch_pnl_tw()
-    current_us = fetch_pnl_us()
-    tw_snapshot = portfolio_snapshot_repo.get_daily('TW', tw_trading_date)
-    us_snapshot = portfolio_snapshot_repo.get_daily('US', us_trading_date)
-    return format_daily_pnl_delta(
-        current_tw=current_tw,
-        current_us=current_us,
-        previous_tw=tw_snapshot.pnl_tw if tw_snapshot is not None else None,
-        previous_us=us_snapshot.pnl_us if us_snapshot is not None else None,
+    normalized = market.strip().upper()
+    if normalized == 'TW':
+        current = fetch_pnl_tw()
+    elif normalized == 'US':
+        current = fetch_pnl_us()
+    else:
+        raise ValueError(f'Unsupported market: {market}')
+
+    snapshot = portfolio_snapshot_repo.get_daily(normalized, trading_date)
+    previous = None
+    if snapshot is not None:
+        previous = snapshot.pnl_tw if normalized == 'TW' else snapshot.pnl_us
+
+    return format_market_daily_pnl_delta(
+        market=normalized,
+        current_pnl=current,
+        previous_pnl=previous,
     )

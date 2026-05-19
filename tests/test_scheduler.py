@@ -231,7 +231,24 @@ class TestScheduledPush:
     ) -> None:
         _scheduled_push()
         mock_tw_push.assert_called_once()
-        mock_pnl_delta.assert_called_once()
+        mock_pnl_delta.assert_called_once_with('TW')
+
+    @patch('fastapistock.scheduler._safe_send_daily_pnl_delta')
+    @patch('fastapistock.scheduler.push_tw_stocks')
+    @patch('fastapistock.scheduler.push_us_stocks')
+    @patch('fastapistock.scheduler.is_tw_market_window', return_value=False)
+    @patch('fastapistock.scheduler.is_us_market_window', return_value=True)
+    def test_us_window_sends_us_daily_pnl_delta(
+        self,
+        mock_us_win: MagicMock,
+        mock_tw_win: MagicMock,
+        mock_us_push: MagicMock,
+        mock_tw_push: MagicMock,
+        mock_pnl_delta: MagicMock,
+    ) -> None:
+        _scheduled_push()
+        mock_us_push.assert_called_once()
+        mock_pnl_delta.assert_called_once_with('US')
 
 
 class TestBuildScheduler:

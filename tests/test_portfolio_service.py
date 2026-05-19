@@ -9,7 +9,7 @@ from fastapistock.repositories.portfolio_snapshot_repo import PortfolioSnapshot
 from fastapistock.services import portfolio_service
 from fastapistock.services.portfolio_service import (
     _format_pnl_reply,
-    format_daily_pnl_delta,
+    format_market_daily_pnl_delta,
 )
 
 _TZ = ZoneInfo('Asia/Taipei')
@@ -56,58 +56,54 @@ class TestFormatPnlReply:
 
 
 class TestDailyPnlDelta:
-    def test_format_daily_pnl_delta_complete(self) -> None:
-        text = format_daily_pnl_delta(
-            current_tw=108000.0,
-            current_us=12000.0,
-            previous_tw=100000.0,
-            previous_us=15000.0,
+    def test_format_market_daily_pnl_delta_complete_us(self) -> None:
+        text = format_market_daily_pnl_delta(
+            market='US',
+            current_pnl=350000.0,
+            previous_pnl=320000.0,
         )
 
-        assert '+8,000 TWD' in text
-        assert '-3,000 TWD' in text
-        assert '+5,000 TWD' in text
-        assert '+120,000 TWD' in text
-        assert '+115,000 TWD' in text
+        assert 'US PnL vs previous close' in text
+        assert 'Current: +350,000 TWD' in text
+        assert 'Previous close: +320,000 TWD' in text
+        assert 'Change: +30,000 TWD' in text
 
-    def test_format_daily_pnl_delta_missing_baseline(self) -> None:
-        text = format_daily_pnl_delta(
-            current_tw=108000.0,
-            current_us=12000.0,
-            previous_tw=None,
-            previous_us=None,
+    def test_format_market_daily_pnl_delta_missing_us_baseline(self) -> None:
+        text = format_market_daily_pnl_delta(
+            market='US',
+            current_pnl=350000.0,
+            previous_pnl=None,
         )
 
-        assert 'No previous-close baseline yet' in text
-        assert '+120,000 TWD' in text
+        assert 'No US previous-close baseline yet.' in text
+        assert 'Current: +350,000 TWD' in text
+        assert 'Current total' not in text
 
-    def test_format_daily_pnl_delta_missing_baseline_and_current_unavailable(
+    def test_format_market_daily_pnl_delta_current_unavailable(
         self,
     ) -> None:
-        text = format_daily_pnl_delta(
-            current_tw=None,
-            current_us=None,
-            previous_tw=None,
-            previous_us=None,
+        text = format_market_daily_pnl_delta(
+            market='US',
+            current_pnl=None,
+            previous_pnl=None,
         )
 
-        assert 'No previous-close baseline yet' in text
-        assert 'Current total unavailable' in text
+        assert 'US current PnL unavailable.' in text
         assert '+0 TWD' not in text
 
-    def test_format_daily_pnl_delta_missing_baseline_and_partial_current_unavailable(
+    def test_format_market_daily_pnl_delta_tw_does_not_show_us_or_total(
         self,
     ) -> None:
-        text = format_daily_pnl_delta(
-            current_tw=None,
-            current_us=12000.0,
-            previous_tw=None,
-            previous_us=None,
+        text = format_market_daily_pnl_delta(
+            market='TW',
+            current_pnl=108000.0,
+            previous_pnl=100000.0,
         )
 
-        assert 'No previous-close baseline yet' in text
-        assert 'Current total unavailable' in text
-        assert '+12,000 TWD' not in text
+        assert 'TW PnL vs previous close' in text
+        assert 'Change: +8,000 TWD' in text
+        assert 'US:' not in text
+        assert 'Total:' not in text
 
     def test_save_daily_close_snapshot_tw(
         self, monkeypatch: pytest.MonkeyPatch
@@ -137,7 +133,7 @@ class TestDailyPnlDelta:
         assert saved['trading_date'] == '2026-05-19'
         assert isinstance(saved['snapshot'], PortfolioSnapshot)
 
-    def test_get_daily_pnl_delta_reply_uses_daily_baselines(
+    def test_get_daily_pnl_delta_reply_uses_us_daily_baseline_only(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(portfolio_service, 'fetch_pnl_tw', lambda: 108000.0)
@@ -165,8 +161,10 @@ class TestDailyPnlDelta:
         )
 
         text = portfolio_service.get_daily_pnl_delta_reply(
-            tw_trading_date='2026-05-19',
-            us_trading_date='2026-05-19',
+            market='US', trading_date='2026-05-19'
         )
 
-        assert '+5,000 TWD' in text
+        assert 'US PnL vs previous close' in text
+        assert 'Change: -3,000 TWD' in text
+        assert 'TW:' not in text
+        assert 'Total:' not in text

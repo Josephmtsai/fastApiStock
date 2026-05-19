@@ -10,23 +10,27 @@ TW and US portfolios must use separate market-close baselines:
 - TW baseline: the TW portfolio total PnL captured after Taiwan market close.
 - US baseline: the US portfolio total PnL captured after US market close.
 
-Every 30-minute quote push may include a compact PnL delta section that shows
-whether total PnL increased or decreased versus each market's previous close.
+Every 30-minute quote push may include a compact PnL delta section for the
+active market only. TW pushes compare TW current PnL against the TW previous
+close baseline. US pushes compare US current PnL against the US previous close
+baseline. Cross-market totals are no longer displayed.
 
 ## User Stories
 
 ### US1 - See total PnL movement during quote pushes
 
-As an investor, I want each scheduled quote push to include total PnL movement
-versus yesterday's market-close baseline, so that I can quickly know whether my
-portfolio is better or worse than the previous close.
+As an investor, I want each scheduled quote push to include that market's PnL
+movement versus yesterday's market-close baseline, so that I can quickly know
+whether the active market's portfolio is better or worse than the previous close.
 
 Acceptance Criteria:
 
 - Given both TW and US close baselines exist
 - When a scheduled push runs during either market window
-- Then the message includes TW delta, US delta, total delta, current total PnL,
-  and previous-close total baseline
+- Then a TW push includes only TW current PnL, TW previous-close baseline, and
+  TW delta
+- Then a US push includes only US current PnL, US previous-close baseline, and
+  US delta
 
 ### US2 - Keep TW and US baselines aligned to their own markets
 
@@ -81,15 +85,12 @@ Acceptance Criteria:
 - PnL total: one market's total unrealized PnL in TWD
 - Captured timestamp: Asia/Taipei aware datetime
 
-`DailyPnlDelta`
+`MarketDailyPnlDelta`
 
-- Current TW PnL
-- Current US PnL
-- TW previous-close baseline
-- US previous-close baseline
-- TW delta
-- US delta
-- Total delta
+- Market: `TW` or `US`
+- Current market PnL
+- Market previous-close baseline
+- Market delta
 
 ## Data Contracts
 
@@ -136,7 +137,9 @@ Trading-date mapping:
 Scheduled push behavior:
 
 - Keep the existing 30-minute quote push.
-- After quotes are fetched, build a PnL delta text block through
+- After TW quotes are fetched, build a TW-only PnL delta text block through
+  `portfolio_service`.
+- After US quotes are fetched, build a US-only PnL delta text block through
   `portfolio_service`.
 - Append the PnL delta block to the Telegram message where the existing
   message-sending API supports it.
@@ -149,34 +152,28 @@ Scheduled push behavior:
 Target plain-text content:
 
 ```text
-Portfolio PnL vs previous close
+US PnL vs previous close
 
-TW: +8,000 TWD
-US: -3,000 TWD
-
-Total: +5,000 TWD
-Current total: +120,000 TWD
-Previous close baseline: +115,000 TWD
+Current: +350,000 TWD
+Previous close: +320,000 TWD
+Change: +30,000 TWD
 ```
 
 Missing baseline:
 
 ```text
-Portfolio PnL vs previous close
+US PnL vs previous close
 
-No previous-close baseline yet.
-Current total: +120,000 TWD
+No US previous-close baseline yet.
+Current: +350,000 TWD
 ```
 
 Partial data:
 
 ```text
-Portfolio PnL vs previous close
+US PnL vs previous close
 
-TW: +8,000 TWD
-US: current PnL unavailable
-
-Total delta unavailable until both markets have current PnL and baselines.
+US current PnL unavailable.
 ```
 
 Chinese copy can be adjusted during implementation to match existing bot
@@ -184,8 +181,8 @@ messages. The behavior and fields above are the contract.
 
 ## External Data Sources
 
-- Current TW total PnL: `portfolio_repo.fetch_pnl_tw()`
-- Current US total PnL: `portfolio_repo.fetch_pnl_us()`
+- Current TW PnL for TW messages: `portfolio_repo.fetch_pnl_tw()`
+- Current US PnL for US messages: `portfolio_repo.fetch_pnl_us()`
 - Existing functions read Google Sheets CSV with HTTP timeout and Redis cache.
 
 No new external stock-price API is needed for this feature.
@@ -219,6 +216,7 @@ No new external stock-price API is needed for this feature.
 ## Out of Scope
 
 - Per-symbol PnL comparison.
+- Cross-market total PnL display.
 - Percentage change display.
 - New database tables or Alembic migration.
 - Modifying `/pnl` command output.

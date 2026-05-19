@@ -170,24 +170,31 @@ def _previous_weekday(current_date: date) -> date:
     return candidate
 
 
-def _send_daily_pnl_delta(now: datetime | None = None) -> None:
+def _send_daily_pnl_delta(market: str, now: datetime | None = None) -> None:
     """Send compact PnL delta message after scheduled quote push."""
     if not TELEGRAM_USER_ID:
         logger.warning('TELEGRAM_USER_ID not set; skipping PnL delta push')
         return
+    normalized = market.strip().upper()
     local = (now or datetime.now(_TZ)).astimezone(_TZ)
+    if normalized == 'TW':
+        trading_date = _previous_tw_trading_date(local)
+    elif normalized == 'US':
+        trading_date = _previous_us_trading_date(local)
+    else:
+        raise ValueError(f'Unsupported market: {market}')
     text = portfolio_service.get_daily_pnl_delta_reply(
-        tw_trading_date=_previous_tw_trading_date(local),
-        us_trading_date=_previous_us_trading_date(local),
+        market=normalized,
+        trading_date=trading_date,
     )
     if text:
         send_text_message(TELEGRAM_USER_ID, text)
 
 
-def _safe_send_daily_pnl_delta() -> None:
+def _safe_send_daily_pnl_delta(market: str) -> None:
     """Send PnL delta without letting failures interrupt scheduled pushes."""
     try:
-        _send_daily_pnl_delta()
+        _send_daily_pnl_delta(market)
     except Exception:
         logger.exception('Scheduled PnL delta wrapper failed')
 
@@ -204,12 +211,12 @@ def _scheduled_push() -> None:
     if is_tw_market_window(now):
         logger.info('TW market window active — pushing')
         push_tw_stocks()
-        _safe_send_daily_pnl_delta()
+        _safe_send_daily_pnl_delta('TW')
 
     if is_us_market_window(now):
         logger.info('US market window active — pushing')
         push_us_stocks()
-        _safe_send_daily_pnl_delta()
+        _safe_send_daily_pnl_delta('US')
 
 
 def build_scheduler() -> AsyncIOScheduler:
