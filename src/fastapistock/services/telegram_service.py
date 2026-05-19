@@ -113,6 +113,41 @@ def send_stock_message(user_id: str, stocks: list[StockData]) -> bool:
         return False
 
 
+def send_text_message(user_id: str, text: str) -> bool:
+    """Send a plain text Telegram message.
+
+    Args:
+        user_id: Telegram chat/user ID to send the message to.
+        text: Plain text message body.
+
+    Returns:
+        True if the message was delivered successfully, False otherwise.
+    """
+    if not TELEGRAM_TOKEN:
+        logger.error('TELEGRAM_TOKEN is not configured')
+        return False
+
+    url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/sendMessage'
+    payload = {'chat_id': user_id, 'text': text}
+
+    try:
+        response = httpx.post(url, json=payload, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        logger.info('Telegram text message sent to user_id=%s', user_id)
+        return True
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            'Telegram API error for text message user_id=%s: %s %s',
+            user_id,
+            exc.response.status_code,
+            exc.response.text,
+        )
+        return False
+    except httpx.RequestError as exc:
+        logger.error('Telegram text request failed for user_id=%s: %s', user_id, exc)
+        return False
+
+
 _STARS_TO_TIER: dict[str, int] = {
     '⭐': 1,
     '⭐⭐': 2,

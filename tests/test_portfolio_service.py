@@ -1,6 +1,18 @@
 """Unit tests for portfolio_service PnL formatting."""
 
-from fastapistock.services.portfolio_service import _format_pnl_reply
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from fastapistock.repositories.portfolio_snapshot_repo import PortfolioSnapshot
+from fastapistock.services import portfolio_service
+from fastapistock.services.portfolio_service import (
+    _format_pnl_reply,
+    format_daily_pnl_delta,
+)
+
+_TZ = ZoneInfo('Asia/Taipei')
 
 
 class TestFormatPnlReply:
@@ -41,3 +53,120 @@ class TestFormatPnlReply:
         assert '🇹🇼 台股：$+0 TWD' in result
         assert '🇺🇸 美股：$+0 TWD' in result
         assert '合計：$+0 TWD' in result
+
+
+class TestDailyPnlDelta:
+    def test_format_daily_pnl_delta_complete(self) -> None:
+        text = format_daily_pnl_delta(
+            current_tw=108000.0,
+            current_us=12000.0,
+            previous_tw=100000.0,
+            previous_us=15000.0,
+        )
+
+        assert '+8,000 TWD' in text
+        assert '-3,000 TWD' in text
+        assert '+5,000 TWD' in text
+        assert '+120,000 TWD' in text
+        assert '+115,000 TWD' in text
+
+    def test_format_daily_pnl_delta_missing_baseline(self) -> None:
+        text = format_daily_pnl_delta(
+            current_tw=108000.0,
+            current_us=12000.0,
+            previous_tw=None,
+            previous_us=None,
+        )
+
+        assert 'No previous-close baseline yet' in text
+        assert '+120,000 TWD' in text
+
+    def test_format_daily_pnl_delta_missing_baseline_and_current_unavailable(
+        self,
+    ) -> None:
+        text = format_daily_pnl_delta(
+            current_tw=None,
+            current_us=None,
+            previous_tw=None,
+            previous_us=None,
+        )
+
+        assert 'No previous-close baseline yet' in text
+        assert 'Current total unavailable' in text
+        assert '+0 TWD' not in text
+
+    def test_format_daily_pnl_delta_missing_baseline_and_partial_current_unavailable(
+        self,
+    ) -> None:
+        text = format_daily_pnl_delta(
+            current_tw=None,
+            current_us=12000.0,
+            previous_tw=None,
+            previous_us=None,
+        )
+
+        assert 'No previous-close baseline yet' in text
+        assert 'Current total unavailable' in text
+        assert '+12,000 TWD' not in text
+
+    def test_save_daily_close_snapshot_tw(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        saved: dict[str, object] = {}
+        monkeypatch.setattr(portfolio_service, 'fetch_pnl_tw', lambda: 5000.0)
+        monkeypatch.setattr(
+            portfolio_service.portfolio_snapshot_repo,
+            'save_daily',
+            lambda market, trading_date, snapshot: saved.update(
+                {
+                    'market': market,
+                    'trading_date': trading_date,
+                    'snapshot': snapshot,
+                }
+            ),
+        )
+
+        ok = portfolio_service.save_daily_close_snapshot(
+            market='TW',
+            trading_date='2026-05-19',
+            captured_at=datetime(2026, 5, 19, 14, 10, tzinfo=_TZ),
+        )
+
+        assert ok is True
+        assert saved['market'] == 'TW'
+        assert saved['trading_date'] == '2026-05-19'
+        assert isinstance(saved['snapshot'], PortfolioSnapshot)
+
+    def test_get_daily_pnl_delta_reply_uses_daily_baselines(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(portfolio_service, 'fetch_pnl_tw', lambda: 108000.0)
+        monkeypatch.setattr(portfolio_service, 'fetch_pnl_us', lambda: 12000.0)
+
+        def fake_get_daily(market: str, trading_date: str) -> PortfolioSnapshot | None:
+            if market == 'TW' and trading_date == '2026-05-19':
+                return PortfolioSnapshot(
+                    pnl_tw=100000.0,
+                    pnl_us=0.0,
+                    timestamp=datetime(2026, 5, 19, 14, 10, tzinfo=_TZ),
+                )
+            if market == 'US' and trading_date == '2026-05-19':
+                return PortfolioSnapshot(
+                    pnl_tw=0.0,
+                    pnl_us=15000.0,
+                    timestamp=datetime(2026, 5, 20, 4, 10, tzinfo=_TZ),
+                )
+            return None
+
+        monkeypatch.setattr(
+            portfolio_service.portfolio_snapshot_repo,
+            'get_daily',
+            fake_get_daily,
+        )
+
+        text = portfolio_service.get_daily_pnl_delta_reply(
+            tw_trading_date='2026-05-19',
+            us_trading_date='2026-05-19',
+        )
+
+        assert '+5,000 TWD' in text

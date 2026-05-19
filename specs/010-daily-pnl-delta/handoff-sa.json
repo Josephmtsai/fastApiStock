@@ -1,0 +1,18 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "010-daily-pnl-delta",
+  "status": "ready",
+  "summary": "Design daily total PnL comparison against separate TW and US market-close baselines for scheduled quote pushes.",
+  "artifacts": [
+    "specs/010-daily-pnl-delta/spec.md",
+    "specs/010-daily-pnl-delta/tasks.md"
+  ],
+  "assumptions": [
+    "Only total unrealized PnL is compared; per-symbol comparison is out of scope.",
+    "TW close snapshot is captured around 14:10 Asia/Taipei on Monday-Friday.",
+    "US close snapshot is captured around 04:10 Asia/Taipei on Tuesday-Saturday and stores the previous calendar date as the US trading date.",
+    "Redis daily snapshots are sufficient for MVP; no new database table or Alembic migration is required.",
+    "If appending to the existing rich quote message is invasive, a second compact Telegram message after the quote push is acceptable."
+  ]
+}

@@ -24,6 +24,7 @@ from fastapistock.cache import redis_cache
 logger = logging.getLogger(__name__)
 
 _SNAPSHOT_TTL_SECONDS: int = 120 * 24 * 3600
+_DAILY_PREFIX: str = 'portfolio:snapshot:daily'
 _WEEKLY_PREFIX: str = 'portfolio:snapshot:weekly'
 _MONTHLY_PREFIX: str = 'portfolio:snapshot:monthly'
 _TZ: ZoneInfo = ZoneInfo('Asia/Taipei')
@@ -89,6 +90,50 @@ def _load(key: str) -> PortfolioSnapshot | None:
     if raw is None:
         return None
     return _dict_to_snapshot(raw)
+
+
+def _normalize_market(market: str) -> str:
+    """Normalize and validate a market code.
+
+    Args:
+        market: Market code supplied by caller.
+
+    Returns:
+        Uppercase market code.
+
+    Raises:
+        ValueError: If the market is not TW or US.
+    """
+    normalized = market.strip().upper()
+    if normalized not in {'TW', 'US'}:
+        raise ValueError(f'Unsupported market: {market}')
+    return normalized
+
+
+def save_daily(market: str, trading_date: str, snapshot: PortfolioSnapshot) -> None:
+    """Persist a daily market-close snapshot.
+
+    Args:
+        market: Market code, either ``TW`` or ``US``.
+        trading_date: Market trading date in ``YYYY-MM-DD`` format.
+        snapshot: Snapshot to persist.
+    """
+    normalized = _normalize_market(market).lower()
+    _save(f'{_DAILY_PREFIX}:{normalized}:{trading_date}', snapshot)
+
+
+def get_daily(market: str, trading_date: str) -> PortfolioSnapshot | None:
+    """Read a daily market-close snapshot.
+
+    Args:
+        market: Market code, either ``TW`` or ``US``.
+        trading_date: Market trading date in ``YYYY-MM-DD`` format.
+
+    Returns:
+        PortfolioSnapshot when present and valid, otherwise None.
+    """
+    normalized = _normalize_market(market).lower()
+    return _load(f'{_DAILY_PREFIX}:{normalized}:{trading_date}')
 
 
 def save_weekly(snapshot: PortfolioSnapshot) -> None:

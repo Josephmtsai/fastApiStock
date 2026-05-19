@@ -7,8 +7,10 @@ from zoneinfo import ZoneInfo
 
 from fastapistock.repositories.portfolio_snapshot_repo import (
     PortfolioSnapshot,
+    get_daily,
     get_monthly,
     get_weekly,
+    save_daily,
     save_monthly,
     save_weekly,
 )
@@ -61,3 +63,34 @@ def test_overwrites_existing_snapshot() -> None:
     got = get_weekly('2026-04-19')
     assert got is not None
     assert got.pnl_tw == 999.0
+
+
+def test_daily_save_get_roundtrip_tw() -> None:
+    snapshot = PortfolioSnapshot(
+        pnl_tw=123456.0,
+        pnl_us=0.0,
+        timestamp=datetime(2026, 5, 19, 14, 10, tzinfo=_TZ),
+    )
+
+    save_daily('TW', '2026-05-19', snapshot)
+    got = get_daily('TW', '2026-05-19')
+
+    assert got is not None
+    assert got.pnl_tw == 123456.0
+    assert got.pnl_us == 0.0
+    assert got.timestamp == datetime(2026, 5, 19, 14, 10, tzinfo=_TZ)
+
+
+def test_daily_save_get_roundtrip_us_uses_us_trading_date() -> None:
+    snapshot = PortfolioSnapshot(
+        pnl_tw=0.0,
+        pnl_us=-2500.0,
+        timestamp=datetime(2026, 5, 20, 4, 10, tzinfo=_TZ),
+    )
+
+    save_daily('US', '2026-05-19', snapshot)
+    got = get_daily('US', '2026-05-19')
+
+    assert got is not None
+    assert got.pnl_tw == 0.0
+    assert got.pnl_us == -2500.0

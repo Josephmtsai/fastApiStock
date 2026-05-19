@@ -6,7 +6,7 @@ decide which market (if any) to push to Telegram.
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from functools import partial
 from zoneinfo import ZoneInfo
 
@@ -15,7 +15,9 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from fastapistock.config import TELEGRAM_USER_ID, tw_stock_codes, us_stock_symbols
+from fastapistock.services import portfolio_service
 from fastapistock.services.report_service import run_report_pipeline
+from fastapistock.services.telegram_service import send_text_message
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,86 @@ def push_us_stocks() -> None:
         logger.exception('US scheduled push failed')
 
 
+def capture_tw_close_snapshot(now: datetime | None = None) -> None:
+    """Capture TW close PnL baseline for the current Taiwan trading date.
+
+    Args:
+        now: Optional Asia/Taipei timestamp for tests.
+    """
+    local = (now or datetime.now(_TZ)).astimezone(_TZ)
+    try:
+        portfolio_service.save_daily_close_snapshot(
+            market='TW',
+            trading_date=local.date().isoformat(),
+            captured_at=local,
+        )
+    except Exception:
+        logger.exception('TW daily close snapshot failed')
+
+
+def capture_us_close_snapshot(now: datetime | None = None) -> None:
+    """Capture US close PnL baseline for the previous US trading date.
+
+    Args:
+        now: Optional Asia/Taipei timestamp for tests.
+    """
+    local = (now or datetime.now(_TZ)).astimezone(_TZ)
+    trading_date = (local.date() - timedelta(days=1)).isoformat()
+    try:
+        portfolio_service.save_daily_close_snapshot(
+            market='US',
+            trading_date=trading_date,
+            captured_at=local,
+        )
+    except Exception:
+        logger.exception('US daily close snapshot failed')
+
+
+def _previous_tw_trading_date(now: datetime) -> str:
+    """Return the TW baseline trading date to compare against."""
+    local_date = now.astimezone(_TZ).date()
+    return _previous_weekday(local_date).isoformat()
+
+
+def _previous_us_trading_date(now: datetime) -> str:
+    """Return the US baseline trading date to compare against."""
+    local = now.astimezone(_TZ)
+    if local.hour <= 4:
+        session_date = local.date() - timedelta(days=1)
+        return _previous_weekday(session_date).isoformat()
+    return _previous_weekday(local.date()).isoformat()
+
+
+def _previous_weekday(current_date: date) -> date:
+    """Return the previous weekday, ignoring market holidays."""
+    candidate = current_date - timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _send_daily_pnl_delta(now: datetime | None = None) -> None:
+    """Send compact PnL delta message after scheduled quote push."""
+    if not TELEGRAM_USER_ID:
+        logger.warning('TELEGRAM_USER_ID not set; skipping PnL delta push')
+        return
+    local = (now or datetime.now(_TZ)).astimezone(_TZ)
+    text = portfolio_service.get_daily_pnl_delta_reply(
+        tw_trading_date=_previous_tw_trading_date(local),
+        us_trading_date=_previous_us_trading_date(local),
+    )
+    if text:
+        send_text_message(TELEGRAM_USER_ID, text)
+
+
+def _safe_send_daily_pnl_delta() -> None:
+    """Send PnL delta without letting failures interrupt scheduled pushes."""
+    try:
+        _send_daily_pnl_delta()
+    except Exception:
+        logger.exception('Scheduled PnL delta wrapper failed')
+
+
 def _scheduled_push() -> None:
     """Check time windows and trigger appropriate market pushes.
 
@@ -122,10 +204,12 @@ def _scheduled_push() -> None:
     if is_tw_market_window(now):
         logger.info('TW market window active — pushing')
         push_tw_stocks()
+        _safe_send_daily_pnl_delta()
 
     if is_us_market_window(now):
         logger.info('US market window active — pushing')
         push_us_stocks()
+        _safe_send_daily_pnl_delta()
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -151,6 +235,24 @@ def build_scheduler() -> AsyncIOScheduler:
         trigger=CronTrigger(day_of_week='sun', hour=21, minute=0, timezone=str(_TZ)),
         id='weekly_report',
         name='Weekly portfolio report',
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        capture_tw_close_snapshot,
+        trigger=CronTrigger(
+            day_of_week='mon-fri', hour=14, minute=10, timezone=str(_TZ)
+        ),
+        id='tw_daily_close_snapshot',
+        name='TW daily close PnL snapshot',
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        capture_us_close_snapshot,
+        trigger=CronTrigger(
+            day_of_week='tue-sat', hour=4, minute=10, timezone=str(_TZ)
+        ),
+        id='us_daily_close_snapshot',
+        name='US daily close PnL snapshot',
         replace_existing=True,
     )
     scheduler.add_job(

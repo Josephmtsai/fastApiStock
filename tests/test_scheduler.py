@@ -9,8 +9,12 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from fastapistock.scheduler import (
+    _previous_tw_trading_date,
+    _previous_us_trading_date,
     _scheduled_push,
     build_scheduler,
+    capture_tw_close_snapshot,
+    capture_us_close_snapshot,
     is_tw_market_window,
     is_us_market_window,
     push_tw_stocks,
@@ -212,13 +216,36 @@ class TestScheduledPush:
         mock_us_push.assert_called_once()
         mock_tw_push.assert_not_called()
 
+    @patch('fastapistock.scheduler._safe_send_daily_pnl_delta')
+    @patch('fastapistock.scheduler.push_tw_stocks')
+    @patch('fastapistock.scheduler.push_us_stocks')
+    @patch('fastapistock.scheduler.is_tw_market_window', return_value=True)
+    @patch('fastapistock.scheduler.is_us_market_window', return_value=False)
+    def test_tw_window_sends_daily_pnl_delta(
+        self,
+        mock_us_win: MagicMock,
+        mock_tw_win: MagicMock,
+        mock_us_push: MagicMock,
+        mock_tw_push: MagicMock,
+        mock_pnl_delta: MagicMock,
+    ) -> None:
+        _scheduled_push()
+        mock_tw_push.assert_called_once()
+        mock_pnl_delta.assert_called_once()
+
 
 class TestBuildScheduler:
     def test_returns_configured_scheduler(self) -> None:
         scheduler = build_scheduler()
         jobs = scheduler.get_jobs()
         job_ids = {job.id for job in jobs}
-        assert job_ids == {'stock_push', 'weekly_report', 'monthly_report'}
+        assert job_ids == {
+            'stock_push',
+            'weekly_report',
+            'monthly_report',
+            'tw_daily_close_snapshot',
+            'us_daily_close_snapshot',
+        }
 
     def test_weekly_job_calls_pipeline_with_weekly_cron(self) -> None:
         """The weekly cron job must invoke run_report_pipeline with the correct args."""
@@ -258,6 +285,45 @@ class TestBuildScheduler:
             'report_type': 'monthly',
             'trigger': 'cron',
         }
+
+
+class TestDailyCloseSnapshots:
+    def test_tw_close_snapshot_uses_current_tw_trading_date(self) -> None:
+        with patch(
+            'fastapistock.scheduler.portfolio_service.save_daily_close_snapshot',
+            return_value=True,
+        ) as mock_save:
+            capture_tw_close_snapshot(datetime(2026, 5, 19, 14, 10, tzinfo=_TZ))
+
+        mock_save.assert_called_once()
+        assert mock_save.call_args.kwargs['market'] == 'TW'
+        assert mock_save.call_args.kwargs['trading_date'] == '2026-05-19'
+
+    def test_us_close_snapshot_uses_previous_us_trading_date(self) -> None:
+        with patch(
+            'fastapistock.scheduler.portfolio_service.save_daily_close_snapshot',
+            return_value=True,
+        ) as mock_save:
+            capture_us_close_snapshot(datetime(2026, 5, 20, 4, 10, tzinfo=_TZ))
+
+        mock_save.assert_called_once()
+        assert mock_save.call_args.kwargs['market'] == 'US'
+        assert mock_save.call_args.kwargs['trading_date'] == '2026-05-19'
+
+    def test_previous_tw_trading_date_skips_weekend(self) -> None:
+        monday = datetime(2026, 5, 18, 9, 0, tzinfo=_TZ)
+
+        assert _previous_tw_trading_date(monday) == '2026-05-15'
+
+    def test_previous_us_trading_date_monday_evening_uses_friday(self) -> None:
+        monday_evening = datetime(2026, 5, 18, 17, 0, tzinfo=_TZ)
+
+        assert _previous_us_trading_date(monday_evening) == '2026-05-15'
+
+    def test_previous_us_trading_date_before_close_uses_prior_close(self) -> None:
+        tuesday_before_close = datetime(2026, 5, 19, 3, 30, tzinfo=_TZ)
+
+        assert _previous_us_trading_date(tuesday_before_close) == '2026-05-15'
 
 
 class TestMonthlyReportTrigger:
