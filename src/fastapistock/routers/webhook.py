@@ -11,6 +11,7 @@ Rate limiting uses the RATE_LIMIT_WEBHOOK_* env var prefix.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
@@ -18,6 +19,7 @@ from fastapistock import config
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.common import ResponseEnvelope
 from fastapistock.services import history_handler
+from fastapistock.services.signal_service import build_signal_overview
 from fastapistock.services.telegram_service import (
     format_rich_stock_message,
     reply_to_chat,
@@ -135,6 +137,7 @@ _HELP_TEXT = (
     '/us AAPL,TSLA — 美股即時報價\n'
     '/tw 0050,2330 — 台股即時報價\n'
     '/history — 查詢歷史報告（互動選單）\n'
+    '/signal — 全部持股加碼訊號\n'
     '/help — 顯示此說明'
 )
 
@@ -261,6 +264,10 @@ def _dispatch_message(msg: TelegramMessage) -> None:
         # /history has its own internal Telegram interactions
         # (text reply OR inline keyboard), so we delegate fully.
         history_handler.handle_text_command(chat_id=chat_id, args=args)
+        return
+    elif cmd == '/signal':
+        reply = build_signal_overview(datetime.now(ZoneInfo('Asia/Taipei')))
+        reply_to_chat(chat_id, reply, parse_mode='MarkdownV2')
         return
     elif cmd == '/help':
         reply = _HELP_TEXT

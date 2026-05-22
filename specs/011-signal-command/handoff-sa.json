@@ -1,0 +1,18 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "011-signal-command",
+  "status": "ready",
+  "summary": "Add Telegram /signal command spec for all TW and US holdings, showing long-term add-on signal status and 90-day history without amount advice.",
+  "artifacts": [
+    "specs/011-signal-command/spec.md",
+    "specs/011-signal-command/tasks.md"
+  ],
+  "assumptions": [
+    "/signal v1 shows all holdings only and does not support tw/us/symbol filters.",
+    "No amount, share count, cash, monthly budget, overweight, or ranking output is included.",
+    "Scheduled push behavior remains unchanged and only shows existing per-stock add-on signal when triggered.",
+    "90-day history uses existing signal_history_repo.list_signals() and Redis signal:history:* records.",
+    "Observation status means price is below MA50 or drawdown is between -15% and -20%."
+  ]
+}

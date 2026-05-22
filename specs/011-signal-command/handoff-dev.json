@@ -1,0 +1,15 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "011-signal-command",
+  "status": "ready",
+  "summary": "Implemented Telegram /signal overview and reviewer fix for per-symbol rich snapshot failures without collapsing the market section.",
+  "changed_files": [
+    "src/fastapistock/services/signal_service.py",
+    "src/fastapistock/routers/webhook.py",
+    "tests/test_signal_service.py",
+    "tests/test_webhook.py",
+    "specs/011-signal-command/handoff-dev.json"
+  ],
+  "ac_ref": "specs/011-signal-command/tasks.md"
+}

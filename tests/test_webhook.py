@@ -20,6 +20,7 @@ _PATCH_REPLY = 'fastapistock.routers.webhook.reply_to_chat'
 _PATCH_ACHIEVEMENT = 'fastapistock.routers.webhook._handle_q'
 _PATCH_US = 'fastapistock.routers.webhook._handle_us'
 _PATCH_TW = 'fastapistock.routers.webhook._handle_tw'
+_PATCH_SIGNAL = 'fastapistock.routers.webhook.build_signal_overview'
 
 
 def _make_update(text: str, user_id: int = _AUTHORIZED_ID) -> dict[str, object]:
@@ -159,6 +160,33 @@ def test_tw_with_codes_dispatched(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert resp.status_code == 200
     mock_tw.assert_called_once_with('0050,2330')
+
+
+# ---------------------------------------------------------------------------
+# /signal command
+# ---------------------------------------------------------------------------
+
+
+def test_signal_command_replies_with_markdown_overview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_PATCH_SECRET, _VALID_SECRET)
+    monkeypatch.setattr(_PATCH_USER, str(_AUTHORIZED_ID))
+    overview = '*加碼訊號總覽*'
+
+    with (
+        patch(_PATCH_SIGNAL, return_value=overview) as mock_signal,
+        patch(_PATCH_REPLY, return_value=True) as mock_reply,
+    ):
+        resp = _post(_make_update('/signal'))
+
+    assert resp.status_code == 200
+    mock_signal.assert_called_once()
+    mock_reply.assert_called_once_with(
+        str(_AUTHORIZED_ID),
+        overview,
+        parse_mode='MarkdownV2',
+    )
 
 
 # ---------------------------------------------------------------------------
