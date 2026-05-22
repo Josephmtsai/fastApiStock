@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapistock.repositories import portfolio_repo
+from fastapistock.repositories.portfolio_repo import PortfolioEntry
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services import stock_service, us_stock_service
@@ -191,22 +192,33 @@ def build_pnl_report(now: datetime) -> list[str]:
 
     # --- TW ---
     tw_stocks: list[RichStockData] | None
-    tw_symbols: list[str] | None
+    tw_portfolio_entries: dict[str, PortfolioEntry]
     try:
-        tw_symbols = list(portfolio_repo.fetch_portfolio().keys())
+        tw_portfolio_entries = portfolio_repo.fetch_portfolio()
+        tw_symbols_list: list[str] | None = list(tw_portfolio_entries.keys())
     except Exception as exc:
         logger.error('TW portfolio fetch failed: %s', exc)
-        tw_symbols = None
+        tw_portfolio_entries = {}
+        tw_symbols_list = None
 
-    if tw_symbols is None:
+    if tw_symbols_list is None:
         tw_stocks = None
-    elif not tw_symbols:
+    elif not tw_symbols_list:
         tw_stocks = []
     else:
         tw_stocks = []
-        for sym in tw_symbols:
+        for sym in tw_symbols_list:
             try:
                 result = stock_service.get_rich_tw_stock(sym)
+                entry = tw_portfolio_entries.get(sym)
+                if entry is not None:
+                    result = result.model_copy(
+                        update={
+                            'shares': entry.shares,
+                            'avg_cost': entry.avg_cost,
+                            'unrealized_pnl': entry.unrealized_pnl,
+                        }
+                    )
                 tw_stocks.append(result)
             except StockNotFoundError:
                 logger.warning('TW stock not found, skipping: %s', sym)

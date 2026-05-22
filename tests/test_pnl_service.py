@@ -1,11 +1,12 @@
 """Tests for the pnl_service module (P&L calculation + MarkdownV2 report)."""
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from fastapistock.repositories.portfolio_repo import PortfolioEntry
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services.news_service import SentimentNews
 from fastapistock.services.pnl_service import (
@@ -88,6 +89,14 @@ def test_split_message_long_message_splits_at_newline() -> None:
         assert len(part) <= _MSG_LIMIT
 
 
+def _pe(
+    symbol: str, shares: int = 100, avg_cost: float = 80.0, pnl: float = 2000.0
+) -> PortfolioEntry:
+    return PortfolioEntry(
+        symbol=symbol, shares=shares, avg_cost=avg_cost, unrealized_pnl=pnl
+    )
+
+
 def test_build_pnl_report_returns_list_of_strings() -> None:
     tw_stock = _make_rich(
         '2330', 'TW', change=15.0, shares=1000, unrealized_pnl=45000.0
@@ -100,8 +109,12 @@ def test_build_pnl_report_returns_list_of_strings() -> None:
         patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
         patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
     ):
-        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
-        mock_pr.fetch_portfolio_us.return_value = {'AAPL': MagicMock()}
+        mock_pr.fetch_portfolio.return_value = {
+            '2330': _pe('2330', shares=1000, pnl=45000.0)
+        }
+        mock_pr.fetch_portfolio_us.return_value = {
+            'AAPL': _pe('AAPL', shares=10, pnl=-800.0)
+        }
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = [us_stock]
 
@@ -149,7 +162,7 @@ def test_build_pnl_report_shows_news_in_stock_row() -> None:
             return_value=[news_item],
         ),
     ):
-        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
+        mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
         mock_pr.fetch_portfolio_us.return_value = {}
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
@@ -170,7 +183,7 @@ def test_build_pnl_report_us_fetch_failure_shows_error() -> None:
         patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
         patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
     ):
-        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
+        mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
         mock_pr.fetch_portfolio_us.side_effect = Exception('us sheets down')
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
@@ -194,7 +207,7 @@ def test_build_pnl_report_news_exception_shows_no_news() -> None:
             side_effect=RuntimeError('news boom'),
         ),
     ):
-        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
+        mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
         mock_pr.fetch_portfolio_us.return_value = {}
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
@@ -219,8 +232,8 @@ def test_build_pnl_report_one_tw_stock_not_found_still_renders_others() -> None:
         patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
     ):
         mock_pr.fetch_portfolio.return_value = {
-            '2330': MagicMock(),
-            '0050': MagicMock(),
+            '2330': _pe('2330'),
+            '0050': _pe('0050'),
         }
         mock_pr.fetch_portfolio_us.return_value = {}
         mock_ss.get_rich_tw_stock.side_effect = lambda sym: (
@@ -236,3 +249,31 @@ def test_build_pnl_report_one_tw_stock_not_found_still_renders_others() -> None:
     full = '\n'.join(result)
     assert '0050' in full
     assert '資料讀取失敗' not in full
+
+
+def test_build_pnl_report_tw_portfolio_shares_merged_into_rich_data() -> None:
+    """get_rich_tw_stock returns shares=None; pnl_service must merge from portfolio."""
+    bare_stock = _make_rich(
+        '2330', 'TW', shares=None, avg_cost=None, unrealized_pnl=None
+    )
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+    ):
+        mock_pr.fetch_portfolio.return_value = {
+            '2330': _pe('2330', shares=500, avg_cost=650.0, pnl=12500.0)
+        }
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_ss.get_rich_tw_stock.return_value = bare_stock
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    # Stock must appear in report (shares correctly merged from portfolio entry)
+    assert '2330' in full
+    assert '目前無持股' not in full
