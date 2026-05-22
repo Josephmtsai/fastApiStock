@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from fastapistock.schemas.stock import RichStockData
+from fastapistock.services.news_service import SentimentNews
 from fastapistock.services.pnl_service import (
     _MSG_LIMIT,
     _calc_market_today_pnl,
@@ -130,3 +131,77 @@ def test_build_pnl_report_tw_fetch_failure_shows_error() -> None:
 
     full = '\n'.join(result)
     assert '資料讀取失敗' in full
+
+
+# ── QA gap coverage: Bug #1 / #2 / #3 ─────────────────────────────────────
+
+
+def test_build_pnl_report_shows_news_in_stock_row() -> None:
+    tw_stock = _make_rich('2330', 'TW', shares=100)
+    news_item = SentimentNews(title='AI需求強勁', sentiment='正面')
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch(
+            'fastapistock.services.pnl_service.get_sentiment_news',
+            return_value=[news_item],
+        ),
+    ):
+        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '📰' in full
+    assert '正面' in full
+
+
+def test_build_pnl_report_us_fetch_failure_shows_error() -> None:
+    tw_stock = _make_rich('2330', 'TW', change=10.0, shares=100)
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+    ):
+        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
+        mock_pr.fetch_portfolio_us.side_effect = Exception('us sheets down')
+        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '資料讀取失敗' in full
+    assert '2330' in full
+
+
+def test_build_pnl_report_news_exception_shows_no_news() -> None:
+    tw_stock = _make_rich('2330', 'TW', shares=100)
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch(
+            'fastapistock.services.pnl_service.get_sentiment_news',
+            side_effect=RuntimeError('news boom'),
+        ),
+    ):
+        mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '暫無新聞' in full
+    assert '2330' in full
