@@ -59,6 +59,33 @@ def test_fetch_news_yfinance_exception_returns_empty(
     assert result == []
 
 
+def test_fetch_news_empty_cache_falls_through_to_yfinance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cache hit with items=[] must fall through to yfinance (stale-cache bypass)."""
+    fake_cache = MagicMock()
+    fake_cache.get.return_value = {'items': []}  # stale empty entry
+    monkeypatch.setattr('fastapistock.repositories.news_repo._cache', fake_cache)
+
+    mock_ticker = MagicMock()
+    mock_ticker.news = [
+        {
+            'id': 'xyz',
+            'content': {
+                'title': 'Fresh headline',
+                'canonicalUrl': {'url': 'http://fresh.com'},
+            },
+        }
+    ]
+
+    with patch('yfinance.Ticker', return_value=mock_ticker):
+        with patch('time.sleep'):
+            result = fetch_news('2330', 'TW')
+
+    assert result == [NewsItem(title='Fresh headline', url='http://fresh.com')]
+    fake_cache.put.assert_called_once()
+
+
 def test_fetch_news_tw_uses_tw_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_cache = _make_cache_miss()
     monkeypatch.setattr('fastapistock.repositories.news_repo._cache', fake_cache)

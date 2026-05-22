@@ -194,7 +194,7 @@ def fetch_portfolio_us() -> dict[str, PortfolioEntry]:
     for row_index, row in enumerate(reader):
         if row_index == 0:
             continue
-        if len(row) <= _COL_US_UNREALIZED_PNL:
+        if len(row) <= _COL_US_SHARES:
             continue
         normalized = _normalize_us_symbol(row[_COL_SYMBOL])
         if not normalized or not normalized.isalpha():
@@ -204,8 +204,16 @@ def fetch_portfolio_us() -> dict[str, PortfolioEntry]:
             entry = PortfolioEntry(
                 symbol=normalized,
                 shares=int(_parse_number(row[_COL_US_SHARES])),
-                avg_cost=_parse_number(row[_COL_US_AVG_COST]),
-                unrealized_pnl=_parse_number(row[_COL_US_UNREALIZED_PNL]),
+                avg_cost=(
+                    _parse_number(row[_COL_US_AVG_COST])
+                    if len(row) > _COL_US_AVG_COST
+                    else 0.0
+                ),
+                unrealized_pnl=(
+                    _parse_number(row[_COL_US_UNREALIZED_PNL])
+                    if len(row) > _COL_US_UNREALIZED_PNL
+                    else 0.0
+                ),
             )
         except (ValueError, IndexError) as exc:
             logger.warning('Skipping malformed US portfolio row %d: %s', row_index, exc)

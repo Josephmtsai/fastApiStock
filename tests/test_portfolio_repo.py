@@ -263,3 +263,43 @@ def test_portfolio_entry_immutable() -> None:
     )
     with pytest.raises(AttributeError):
         entry.shares = 999  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Truncated-row handling (Google Sheets CSV drops trailing empty columns)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_portfolio_tw_truncated_row_uses_zero_fallbacks() -> None:
+    """Rows with only symbol+name+shares must still be included with 0.0 defaults."""
+    csv_text = 'symbol,name,shares\n2330,台積電,1000\n'
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_GID, '456'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        result = fetch_portfolio()
+
+    assert '2330' in result
+    entry = result['2330']
+    assert entry.shares == 1000
+    assert entry.avg_cost == pytest.approx(0.0)
+    assert entry.unrealized_pnl == pytest.approx(0.0)
+
+
+def test_fetch_portfolio_us_truncated_row_uses_zero_fallbacks() -> None:
+    """US rows with only symbol+shares (col F) must be included with 0.0 defaults."""
+    # 6 columns: A(0)=US_AAPL, B(1)=Apple, C-E empty, F(5)=10
+    csv_text = 'symbol,name,c,d,e,shares\nUS_AAPL,Apple,,,,10\n'
+    with (
+        patch(_PATCH_ID, '123'),
+        patch(_PATCH_US_GID, '320283463'),
+        patch('httpx.get', return_value=_mock_response(csv_text)),
+    ):
+        result = fetch_portfolio_us()
+
+    assert 'AAPL' in result
+    entry = result['AAPL']
+    assert entry.shares == 10
+    assert entry.avg_cost == pytest.approx(0.0)
+    assert entry.unrealized_pnl == pytest.approx(0.0)
