@@ -8,6 +8,8 @@ from functools import partial
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from fastapistock.scheduler import (
     _previous_tw_trading_date,
     _previous_us_trading_date,
@@ -17,6 +19,7 @@ from fastapistock.scheduler import (
     capture_us_close_snapshot,
     is_tw_market_window,
     is_us_market_window,
+    push_daily_pnl,
     push_tw_stocks,
     push_us_stocks,
 )
@@ -262,6 +265,8 @@ class TestBuildScheduler:
             'monthly_report',
             'tw_daily_close_snapshot',
             'us_daily_close_snapshot',
+            'daily_pnl_tw',
+            'daily_pnl_us',
         }
 
     def test_weekly_job_calls_pipeline_with_weekly_cron(self) -> None:
@@ -385,3 +390,65 @@ class TestMonthlyReportTrigger:
         assert str(fields['day_of_week']) == 'sun'
         # The weekly trigger should NOT have a day restriction of 1-7
         assert str(fields['day']) == '*'
+
+
+# ── push_daily_pnl ──────────────────────────────────────────────────────────
+
+
+class TestPushDailyPnl:
+    def test_push_daily_pnl_sends_all_segments(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """push_daily_pnl must send every segment from build_pnl_report."""
+        monkeypatch.setattr('fastapistock.scheduler.TELEGRAM_USER_ID', '999')
+
+        sent: list[tuple[str, str, dict[str, object]]] = []
+
+        def _fake_send(uid: str, text: str, **kw: object) -> None:
+            sent.append((uid, text, kw))
+
+        monkeypatch.setattr('fastapistock.scheduler.send_text_message', _fake_send)
+        with patch(
+            'fastapistock.scheduler.build_pnl_report', return_value=['seg1', 'seg2']
+        ):
+            push_daily_pnl()
+
+        assert len(sent) == 2
+        assert all(kw.get('parse_mode') == 'MarkdownV2' for _, _, kw in sent)
+
+    def test_push_daily_pnl_no_user_id_skips(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr('fastapistock.scheduler.TELEGRAM_USER_ID', '')
+        with patch('fastapistock.scheduler.build_pnl_report') as mock_build:
+            push_daily_pnl()
+        mock_build.assert_not_called()
+
+    def test_push_daily_pnl_exception_is_caught(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exceptions from build_pnl_report must not propagate."""
+        monkeypatch.setattr('fastapistock.scheduler.TELEGRAM_USER_ID', '999')
+        with patch(
+            'fastapistock.scheduler.build_pnl_report',
+            side_effect=RuntimeError('boom'),
+        ):
+            push_daily_pnl()  # must not raise
+
+
+class TestDailyPnlJobTriggers:
+    def test_tw_pnl_job_fires_weekdays_at_1435(self) -> None:
+        scheduler = build_scheduler()
+        job = next(j for j in scheduler.get_jobs() if j.id == 'daily_pnl_tw')
+        fields = {f.name: f for f in job.trigger.fields}  # type: ignore[attr-defined]
+        assert str(fields['hour']) == '14'
+        assert str(fields['minute']) == '35'
+        assert str(fields['day_of_week']) == 'mon-fri'
+
+    def test_us_pnl_job_fires_tue_sat_at_0405(self) -> None:
+        scheduler = build_scheduler()
+        job = next(j for j in scheduler.get_jobs() if j.id == 'daily_pnl_us')
+        fields = {f.name: f for f in job.trigger.fields}  # type: ignore[attr-defined]
+        assert str(fields['hour']) == '4'
+        assert str(fields['minute']) == '5'
+        assert str(fields['day_of_week']) == 'tue-sat'

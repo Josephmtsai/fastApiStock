@@ -113,12 +113,18 @@ def send_stock_message(user_id: str, stocks: list[StockData]) -> bool:
         return False
 
 
-def send_text_message(user_id: str, text: str) -> bool:
-    """Send a plain text Telegram message.
+def send_text_message(
+    user_id: str,
+    text: str,
+    *,
+    parse_mode: str | None = None,
+) -> bool:
+    """Send a Telegram message to a user by ID.
 
     Args:
         user_id: Telegram chat/user ID to send the message to.
-        text: Plain text message body.
+        text: Message body; must be pre-escaped when parse_mode='MarkdownV2'.
+        parse_mode: Telegram parse mode (e.g. 'MarkdownV2'). None sends plain text.
 
     Returns:
         True if the message was delivered successfully, False otherwise.
@@ -128,7 +134,9 @@ def send_text_message(user_id: str, text: str) -> bool:
         return False
 
     url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/sendMessage'
-    payload = {'chat_id': user_id, 'text': text}
+    payload: dict[str, object] = {'chat_id': user_id, 'text': text}
+    if parse_mode is not None:
+        payload['parse_mode'] = parse_mode
 
     try:
         response = httpx.post(url, json=payload, timeout=_REQUEST_TIMEOUT)

@@ -16,6 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from fastapistock.config import TELEGRAM_USER_ID, tw_stock_codes, us_stock_symbols
 from fastapistock.services import portfolio_service
+from fastapistock.services.pnl_service import build_pnl_report
 from fastapistock.services.report_service import run_report_pipeline
 from fastapistock.services.telegram_service import send_text_message
 
@@ -147,6 +148,29 @@ def capture_us_close_snapshot(now: datetime | None = None) -> None:
         logger.exception('US daily close snapshot failed')
 
 
+def push_daily_pnl() -> None:
+    """Build and send the daily P&L + news report to the configured Telegram user.
+
+    Called by both the TW close job (14:35) and the US close job (04:05 next day).
+    Logs and returns early when TELEGRAM_USER_ID is not configured.
+    All exceptions are caught to prevent scheduler disruption.
+    """
+    if not TELEGRAM_USER_ID:
+        logger.warning('TELEGRAM_USER_ID not set; skipping daily PnL push')
+        return
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo('Asia/Taipei'))
+        segments = build_pnl_report(now)
+        for segment in segments:
+            send_text_message(TELEGRAM_USER_ID, segment, parse_mode='MarkdownV2')
+        logger.info('Daily PnL push complete: %d segments sent', len(segments))
+    except Exception:
+        logger.exception('Daily PnL push failed')
+
+
 def _previous_tw_trading_date(now: datetime) -> str:
     """Return the TW baseline trading date to compare against."""
     local_date = now.astimezone(_TZ).date()
@@ -269,6 +293,22 @@ def build_scheduler() -> AsyncIOScheduler:
         ),
         id='monthly_report',
         name='Monthly portfolio report (first Sunday)',
+        replace_existing=True,
+    )
+    # TW close: weekdays 14:35 Taipei
+    scheduler.add_job(
+        push_daily_pnl,
+        CronTrigger(hour=14, minute=35, day_of_week='mon-fri', timezone=_TZ),
+        id='daily_pnl_tw',
+        name='Daily P&L push (TW close)',
+        replace_existing=True,
+    )
+    # US close: Tue–Sat 04:05 Taipei (Mon–Fri US Eastern close)
+    scheduler.add_job(
+        push_daily_pnl,
+        CronTrigger(hour=4, minute=5, day_of_week='tue-sat', timezone=_TZ),
+        id='daily_pnl_us',
+        name='Daily P&L push (US close)',
         replace_existing=True,
     )
     return scheduler
