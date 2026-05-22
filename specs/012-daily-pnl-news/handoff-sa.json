@@ -1,0 +1,20 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "012-daily-pnl-news",
+  "status": "ready",
+  "summary": "強化 /pnl 指令：新增個股每日損益明細、新聞情緒標籤，並加入台股14:35/美股04:05收盤後定時推播",
+  "artifacts": [
+    "specs/012-daily-pnl-news/spec.md",
+    "specs/012-daily-pnl-news/tasks.md",
+    "docs/superpowers/plans/2026-05-22-daily-pnl-news.md",
+    "docs/superpowers/specs/2026-05-21-daily-pnl-news-design.md"
+  ],
+  "assumptions": [
+    "Google Sheets 投資組合的 avg_cost 欄位已存在（portfolio_repo.PortfolioEntry.avg_cost 已確認）",
+    "RichStockData 的 change, change_pct, shares, unrealized_pnl 欄位已由 stock_service / us_stock_service 填入",
+    "yfinance ticker.news 對 TW 股票使用 <symbol>.TW 後綴，對 US 股票使用原始 symbol",
+    "redis_cache.get()/put() API 保持不變（dict 包裝 list 存入 Redis）",
+    "現有 portfolio_service.get_pnl_reply() 保留不刪除，僅修改 webhook dispatch"
+  ]
+}
