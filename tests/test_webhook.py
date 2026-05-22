@@ -8,6 +8,8 @@ from httpx import Response
 
 from fastapistock.main import app
 
+_PATCH_PNL = 'fastapistock.routers.webhook.build_pnl_report'
+
 _client = TestClient(app)
 
 _VALID_SECRET = 'test-secret'  # noqa: S105 — test fixture value, not a real credential
@@ -223,6 +225,35 @@ def test_unknown_command_silent(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert resp.status_code == 200
     mock_reply.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# /pnl command
+# ---------------------------------------------------------------------------
+
+
+def test_pnl_command_calls_pnl_service_and_sends_markdownv2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify /pnl dispatches to pnl_service and sends MarkdownV2."""
+    monkeypatch.setattr(_PATCH_SECRET, _VALID_SECRET)
+    monkeypatch.setattr(_PATCH_USER, str(_AUTHORIZED_ID))
+
+    sent: list[tuple[str, str, dict[str, object]]] = []
+
+    def _fake_reply(chat_id: str, text: str, **kw: object) -> None:
+        sent.append((chat_id, text, kw))
+
+    with (
+        patch(_PATCH_PNL, return_value=['segment1', 'segment2']),
+        patch(_PATCH_REPLY, side_effect=_fake_reply),
+    ):
+        resp = _post(_make_update('/pnl'))
+
+    assert resp.status_code == 200
+    assert len(sent) == 2
+    assert sent[0][2].get('parse_mode') == 'MarkdownV2'
+    assert sent[1][2].get('parse_mode') == 'MarkdownV2'
 
 
 # ---------------------------------------------------------------------------

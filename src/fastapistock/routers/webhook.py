@@ -19,6 +19,7 @@ from fastapistock import config
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.common import ResponseEnvelope
 from fastapistock.services import history_handler
+from fastapistock.services.pnl_service import build_pnl_report
 from fastapistock.services.signal_service import build_signal_overview
 from fastapistock.services.telegram_service import (
     format_rich_stock_message,
@@ -249,9 +250,10 @@ def _dispatch_message(msg: TelegramMessage) -> None:
     if cmd == '/q':
         reply = _handle_q()
     elif cmd == '/pnl':
-        from fastapistock.services.portfolio_service import get_pnl_reply
-
-        reply = get_pnl_reply()
+        segments = build_pnl_report(datetime.now(ZoneInfo('Asia/Taipei')))
+        for segment in segments:
+            reply_to_chat(chat_id, segment, parse_mode='MarkdownV2')
+        return
     elif cmd == '/us':
         reply = _handle_us(args)
         reply_to_chat(chat_id, reply, parse_mode='MarkdownV2')
