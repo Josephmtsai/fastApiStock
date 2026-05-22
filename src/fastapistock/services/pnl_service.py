@@ -1,0 +1,247 @@
+"""Service for building the daily P&L + news sentiment Telegram report."""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime
+from typing import Literal
+
+from fastapistock.repositories import portfolio_repo
+from fastapistock.schemas.stock import RichStockData
+from fastapistock.services import stock_service, us_stock_service
+from fastapistock.services.news_service import get_sentiment_news
+
+logger = logging.getLogger(__name__)
+
+_MSG_LIMIT = 4096
+_MD_SPECIAL = re.compile(r'([_*\[\]()~`>#+\-=|{}.!\\])')
+
+
+def _esc(text: str) -> str:
+    """Escape MarkdownV2 special characters.
+
+    Args:
+        text: Raw string to escape.
+
+    Returns:
+        String with all MarkdownV2 special characters backslash-escaped.
+    """
+    return _MD_SPECIAL.sub(r'\\\1', text)
+
+
+def _held_stocks(stocks: list[RichStockData]) -> list[RichStockData]:
+    """Return only stocks with a positive share count.
+
+    Args:
+        stocks: List of RichStockData instances.
+
+    Returns:
+        Filtered list excluding stocks with None or zero shares.
+    """
+    return [s for s in stocks if s.shares is not None and s.shares > 0]
+
+
+def _calc_market_today_pnl(stocks: list[RichStockData]) -> float:
+    """Sum today's P&L across held stocks: change x shares.
+
+    Args:
+        stocks: List of held RichStockData instances.
+
+    Returns:
+        Total today's P&L as a float; 0.0 for empty input.
+    """
+    return sum(s.change * (s.shares or 0) for s in stocks)
+
+
+def _fmt_tw_amount(amount: float) -> str:
+    """Format a TWD amount with sign prefix.
+
+    Args:
+        amount: The amount in New Taiwan Dollars.
+
+    Returns:
+        Formatted string such as '+NT$12,450' or '-NT$800'.
+    """
+    sign = '+' if amount >= 0 else ''
+    return f'{sign}NT${amount:,.0f}'
+
+
+def _fmt_us_amount(amount: float) -> str:
+    """Format a USD amount with sign prefix.
+
+    Args:
+        amount: The amount in US Dollars.
+
+    Returns:
+        Formatted string such as '+US$320.00' or '-US$800.00'.
+    """
+    sign = '+' if amount >= 0 else ''
+    return f'{sign}US${amount:,.2f}'
+
+
+def _split_message(text: str) -> list[str]:
+    """Split *text* into segments of at most _MSG_LIMIT chars, breaking at newlines.
+
+    Args:
+        text: Full message text.
+
+    Returns:
+        List of message segments, each at most 4096 characters.
+    """
+    if len(text) <= _MSG_LIMIT:
+        return [text]
+    parts: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in text.splitlines(keepends=True):
+        if current_len + len(line) > _MSG_LIMIT and current:
+            parts.append(''.join(current))
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += len(line)
+    if current:
+        parts.append(''.join(current))
+    return parts
+
+
+def _build_stock_row(
+    stock: RichStockData,
+    market: Literal['TW', 'US'],
+) -> str:
+    """Build a MarkdownV2 row for one held stock.
+
+    Args:
+        stock: RichStockData instance for the stock.
+        market: 'TW' or 'US' market identifier.
+
+    Returns:
+        Multi-line MarkdownV2 string with price, change, P&L, and news.
+    """
+    lines: list[str] = []
+
+    name = _esc(stock.display_name) if stock.display_name != stock.symbol else ''
+    header = f'*{_esc(stock.symbol)}*' + (f' {name}' if name else '')
+    lines.append(header)
+
+    change_sign = '+' if stock.change >= 0 else ''
+    price_line = (
+        f'現價 {_esc(str(round(stock.price, 2)))} \\| '
+        f'今日 {_esc(f"{change_sign}{round(stock.change, 2)}")} '
+        f'\\({_esc(f"{change_sign}{round(stock.change_pct, 2)}%")}\\)'
+    )
+    lines.append(price_line)
+
+    if stock.unrealized_pnl is not None:
+        if market == 'TW':
+            pnl_str = _fmt_tw_amount(stock.unrealized_pnl)
+        else:
+            pnl_str = _fmt_us_amount(stock.unrealized_pnl)
+        lines.append(f'持倉損益 {_esc(pnl_str)}')
+
+    try:
+        news_items = get_sentiment_news(stock.symbol, market)
+        if news_items:
+            for item in news_items:
+                lines.append(f'📰 {_esc(item.title)} \\[{_esc(item.sentiment)}\\]')
+        else:
+            lines.append('📰 暫無新聞')
+    except Exception as exc:
+        logger.warning('News fetch failed for %s: %s', stock.symbol, exc)
+        lines.append('📰 暫無新聞')
+
+    return '\n'.join(lines)
+
+
+def _build_market_section(
+    stocks: list[RichStockData],
+    market: Literal['TW', 'US'],
+) -> str:
+    """Build the market section block for TW or US holdings.
+
+    Args:
+        stocks: All stocks for the market (held and not held).
+        market: 'TW' or 'US'.
+
+    Returns:
+        MarkdownV2 section string with separator, header, and per-stock rows.
+    """
+    held = _held_stocks(stocks)
+    flag = '🇹🇼 台股明細' if market == 'TW' else '🇺🇸 美股明細'
+    if not held:
+        label = '目前無持股' if market == 'TW' else 'No holdings'
+        return f'\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n{flag}\n\n{label}'
+    rows = '\n\n'.join(_build_stock_row(s, market) for s in held)
+    return f'\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n{flag}\n\n{rows}'
+
+
+def build_pnl_report(now: datetime) -> list[str]:
+    """Build the daily P&L + news report as a list of MarkdownV2 message segments.
+
+    Args:
+        now: Current datetime in Asia/Taipei timezone.
+
+    Returns:
+        List of MarkdownV2 strings, each at most 4096 chars.
+    """
+    date_str = now.strftime('%Y\\-%m\\-%d')
+    sections: list[str] = [f'📊 *每日損益報告 {date_str}*']
+
+    # --- TW ---
+    tw_stocks: list[RichStockData] | None
+    try:
+        tw_symbols = list(portfolio_repo.fetch_portfolio().keys())
+        tw_stocks = stock_service.get_rich_tw_stocks(tw_symbols) if tw_symbols else []
+    except Exception as exc:
+        logger.error('TW portfolio fetch failed: %s', exc)
+        tw_stocks = None
+
+    # --- US ---
+    us_stocks: list[RichStockData] | None
+    try:
+        us_symbols = list(portfolio_repo.fetch_portfolio_us().keys())
+        us_stocks = us_stock_service.get_us_stocks(us_symbols) if us_symbols else []
+    except Exception as exc:
+        logger.error('US portfolio fetch failed: %s', exc)
+        us_stocks = None
+
+    # --- Account summary ---
+    tw_held = _held_stocks(tw_stocks) if tw_stocks is not None else []
+    us_held = _held_stocks(us_stocks) if us_stocks is not None else []
+    tw_today: float | None = (
+        _calc_market_today_pnl(tw_held) if tw_stocks is not None else None
+    )
+    us_today: float | None = (
+        _calc_market_today_pnl(us_held) if us_stocks is not None else None
+    )
+
+    tw_line = (
+        f'🇹🇼 台股今日：{_esc(_fmt_tw_amount(tw_today))}'
+        if tw_today is not None
+        else '🇹🇼 台股：資料讀取失敗'
+    )
+    us_line = (
+        f'🇺🇸 美股今日：{_esc(_fmt_us_amount(us_today))}'
+        if us_today is not None
+        else '🇺🇸 美股：資料讀取失敗'
+    )
+    sections.append(f'💰 *帳戶總覽*\n{tw_line}\n{us_line}')
+
+    # --- Stock sections ---
+    if tw_stocks is not None:
+        sections.append(_build_market_section(tw_stocks, 'TW'))
+    else:
+        sections.append(
+            '\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n🇹🇼 台股明細\n\n資料讀取失敗'
+        )
+
+    if us_stocks is not None:
+        sections.append(_build_market_section(us_stocks, 'US'))
+    else:
+        sections.append(
+            '\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n🇺🇸 美股明細\n\n資料讀取失敗'
+        )
+
+    full_text = '\n\n'.join(sections)
+    return _split_message(full_text)
