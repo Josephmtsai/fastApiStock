@@ -6,6 +6,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
 import yfinance as yf
@@ -36,11 +37,13 @@ def fetch_news(symbol: str, market: Literal['TW', 'US']) -> list[NewsItem]:
     Returns:
         List of NewsItem; empty list on any failure.
     """
-    cache_key = f'news:{market}:{symbol}'
+    today = date.today().isoformat()
+    cache_key = f'news:{market}:{symbol}:{today}'
     cached = _cache.get(cache_key)
     if cached is not None:
         raw_items: list[dict[str, str]] = cached.get('items', [])  # type: ignore[assignment]
-        return [NewsItem(title=i['title'], url=i['url']) for i in raw_items]
+        if raw_items:
+            return [NewsItem(title=i['title'], url=i['url']) for i in raw_items]
 
     time.sleep(random.uniform(0.5, 1.5))
 

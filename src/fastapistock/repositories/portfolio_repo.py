@@ -107,7 +107,7 @@ def fetch_portfolio() -> dict[str, PortfolioEntry]:
     for row_index, row in enumerate(reader):
         if row_index == 0:
             continue  # skip header row
-        if len(row) <= _COL_UNREALIZED_PNL:
+        if len(row) <= _COL_SHARES:
             continue
         symbol_raw = row[_COL_SYMBOL].strip()
         if not symbol_raw.isdigit():
@@ -117,8 +117,16 @@ def fetch_portfolio() -> dict[str, PortfolioEntry]:
             entry = PortfolioEntry(
                 symbol=symbol_raw,
                 shares=int(_parse_number(row[_COL_SHARES])),
-                avg_cost=_parse_number(row[_COL_AVG_COST]),
-                unrealized_pnl=_parse_number(row[_COL_UNREALIZED_PNL]),
+                avg_cost=(
+                    _parse_number(row[_COL_AVG_COST])
+                    if len(row) > _COL_AVG_COST
+                    else 0.0
+                ),
+                unrealized_pnl=(
+                    _parse_number(row[_COL_UNREALIZED_PNL])
+                    if len(row) > _COL_UNREALIZED_PNL
+                    else 0.0
+                ),
             )
         except (ValueError, IndexError) as exc:
             logger.warning('Skipping malformed portfolio row %d: %s', row_index, exc)
