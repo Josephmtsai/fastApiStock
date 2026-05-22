@@ -176,14 +176,23 @@ AAPL Apple Inc.
 
 ## 資料契約
 
-### PortfolioEntry（現有，確認含均價欄位）
+### RichStockData（現有，已含所有必要欄位）
+
+`pnl_service` 直接使用 `RichStockData`，無需另外呼叫 `portfolio_repo`：
 
 ```python
-@dataclass
-class PortfolioEntry:
+# 已確認欄位（來自 src/fastapistock/schemas/stock.py）
+class RichStockData(BaseModel):
     symbol: str
-    shares: float
-    avg_cost: float  # 確認此欄位存在於 Google Sheets
+    display_name: str
+    market: Literal['TW', 'US']
+    price: float
+    prev_close: float
+    change: float        # price - prev_close（今日漲跌點）
+    change_pct: float    # % 今日漲跌幅
+    avg_cost: float | None   # 持倉均價（來自 Google Sheets）
+    unrealized_pnl: float | None  # 持倉損益（來自 Google Sheets）
+    shares: int | None   # 持股數量
 ```
 
 ### NewsItem
@@ -245,9 +254,8 @@ class SentimentNews:
 ```
 webhook.py / scheduler.py
   └── pnl_service.py
-        ├── portfolio_repo.py        (現有)
-        ├── stock_service.py         (現有)
-        ├── us_stock_service.py      (現有)
+        ├── stock_service.py         (現有，回傳含 avg_cost/change/unrealized_pnl 的 RichStockData)
+        ├── us_stock_service.py      (現有，同上)
         └── news_service.py          (新增)
               └── news_repo.py       (新增)
                     └── Redis cache  (現有)
