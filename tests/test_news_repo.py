@@ -108,3 +108,22 @@ def test_fetch_news_tw_uses_tw_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
             fetch_news('2330', 'TW')
 
     assert captured['sym'] == '2330.TW'
+
+
+def test_fetch_news_cache_key_is_date_scoped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cache key must include today's date so stale prior-day entries are bypassed."""
+    from datetime import date
+
+    fake_cache = _make_cache_miss()
+    monkeypatch.setattr('fastapistock.repositories.news_repo._cache', fake_cache)
+
+    mock_ticker = MagicMock()
+    mock_ticker.news = []
+
+    with patch('yfinance.Ticker', return_value=mock_ticker):
+        with patch('time.sleep'):
+            fetch_news('AAPL', 'US')
+
+    today = date.today().isoformat()
+    expected_key = f'news:US:AAPL:{today}'
+    assert fake_cache.get.call_args[0][0] == expected_key
