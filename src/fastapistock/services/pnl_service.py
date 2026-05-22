@@ -56,6 +56,19 @@ def _calc_market_today_pnl(stocks: list[RichStockData]) -> float:
     return sum(s.change * (s.shares or 0) for s in stocks)
 
 
+def _calc_holding_pnl(stocks: list[RichStockData]) -> float:
+    """Sum unrealized (holding) P&L across held stocks.
+
+    Args:
+        stocks: List of held RichStockData instances.
+
+    Returns:
+        Total unrealized P&L as a float; 0.0 when stocks is empty or
+        all unrealized_pnl values are None.
+    """
+    return sum(s.unrealized_pnl or 0.0 for s in stocks)
+
+
 def _fmt_tw_amount(amount: float) -> str:
     """Format a TWD amount with sign prefix.
 
@@ -243,14 +256,24 @@ def build_pnl_report(now: datetime) -> list[str]:
     us_today: float | None = (
         _calc_market_today_pnl(us_held) if us_stocks is not None else None
     )
+    tw_holding_part = (
+        f' ｜ 持倉：{_esc(_fmt_tw_amount(_calc_holding_pnl(tw_held)))}'
+        if tw_held
+        else ''
+    )
+    us_holding_part = (
+        f' ｜ 持倉：{_esc(_fmt_us_amount(_calc_holding_pnl(us_held)))}'
+        if us_held
+        else ''
+    )
 
     tw_line = (
-        f'🇹🇼 台股今日：{_esc(_fmt_tw_amount(tw_today))}'
+        f'🇹🇼 台股今日：{_esc(_fmt_tw_amount(tw_today))}{tw_holding_part}'
         if tw_today is not None
         else '🇹🇼 台股：資料讀取失敗'
     )
     us_line = (
-        f'🇺🇸 美股今日：{_esc(_fmt_us_amount(us_today))}'
+        f'🇺🇸 美股今日：{_esc(_fmt_us_amount(us_today))}{us_holding_part}'
         if us_today is not None
         else '🇺🇸 美股：資料讀取失敗'
     )

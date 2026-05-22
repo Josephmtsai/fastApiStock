@@ -11,6 +11,7 @@ from fastapistock.schemas.stock import RichStockData
 from fastapistock.services.news_service import SentimentNews
 from fastapistock.services.pnl_service import (
     _MSG_LIMIT,
+    _calc_holding_pnl,
     _calc_market_today_pnl,
     _held_stocks,
     _split_message,
@@ -72,6 +73,26 @@ def test_calc_market_today_pnl_empty_returns_zero() -> None:
     assert _calc_market_today_pnl([]) == pytest.approx(0.0)
 
 
+def test_calc_holding_pnl_sums_unrealized() -> None:
+    stocks = [
+        _make_rich('A', 'TW', unrealized_pnl=30000.0),
+        _make_rich('B', 'TW', unrealized_pnl=-5000.0),
+    ]
+    assert _calc_holding_pnl(stocks) == pytest.approx(25000.0)
+
+
+def test_calc_holding_pnl_none_values_treated_as_zero() -> None:
+    stocks = [
+        _make_rich('A', 'TW', unrealized_pnl=10000.0),
+        _make_rich('B', 'TW', unrealized_pnl=None),
+    ]
+    assert _calc_holding_pnl(stocks) == pytest.approx(10000.0)
+
+
+def test_calc_holding_pnl_empty_returns_zero() -> None:
+    assert _calc_holding_pnl([]) == pytest.approx(0.0)
+
+
 # ── T4: Message Formatting ──────────────────────────────────────────────────
 
 
@@ -127,6 +148,8 @@ def test_build_pnl_report_returns_list_of_strings() -> None:
     assert '2026' in full
     assert '2330' in full
     assert 'AAPL' in full
+    # Holding P&L should appear inline in the account overview
+    assert '持倉' in full
 
 
 def test_build_pnl_report_tw_fetch_failure_shows_error() -> None:
