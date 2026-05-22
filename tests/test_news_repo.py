@@ -31,7 +31,12 @@ def test_fetch_news_cache_miss_calls_yfinance(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr('fastapistock.repositories.news_repo._cache', fake_cache)
 
     mock_ticker = MagicMock()
-    mock_ticker.news = [{'title': 'Breaking', 'link': 'http://y.com'}]
+    mock_ticker.news = [
+        {
+            'id': 'abc',
+            'content': {'title': 'Breaking', 'canonicalUrl': {'url': 'http://y.com'}},
+        }
+    ]
 
     with patch('yfinance.Ticker', return_value=mock_ticker):
         with patch('time.sleep'):
@@ -63,7 +68,12 @@ def test_fetch_news_tw_uses_tw_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_ticker(sym: str) -> MagicMock:
         captured['sym'] = sym
         m = MagicMock()
-        m.news = []
+        m.news = [
+            {
+                'id': 'x',
+                'content': {'title': 'Test', 'canonicalUrl': {'url': 'http://z.com'}},
+            }
+        ]
         return m
 
     with patch('yfinance.Ticker', side_effect=fake_ticker):

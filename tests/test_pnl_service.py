@@ -102,7 +102,7 @@ def test_build_pnl_report_returns_list_of_strings() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
         mock_pr.fetch_portfolio_us.return_value = {'AAPL': MagicMock()}
-        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = [us_stock]
 
         now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -151,7 +151,7 @@ def test_build_pnl_report_shows_news_in_stock_row() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
         mock_pr.fetch_portfolio_us.return_value = {}
-        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
 
         now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -172,7 +172,7 @@ def test_build_pnl_report_us_fetch_failure_shows_error() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
         mock_pr.fetch_portfolio_us.side_effect = Exception('us sheets down')
-        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
 
         now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -196,7 +196,7 @@ def test_build_pnl_report_news_exception_shows_no_news() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': MagicMock()}
         mock_pr.fetch_portfolio_us.return_value = {}
-        mock_ss.get_rich_tw_stocks.return_value = [tw_stock]
+        mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
 
         now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -205,3 +205,34 @@ def test_build_pnl_report_news_exception_shows_no_news() -> None:
     full = '\n'.join(result)
     assert '暫無新聞' in full
     assert '2330' in full
+
+
+def test_build_pnl_report_one_tw_stock_not_found_still_renders_others() -> None:
+    from fastapistock.repositories.twstock_repo import StockNotFoundError
+
+    good_stock = _make_rich('0050', 'TW', shares=100)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+    ):
+        mock_pr.fetch_portfolio.return_value = {
+            '2330': MagicMock(),
+            '0050': MagicMock(),
+        }
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_ss.get_rich_tw_stock.side_effect = lambda sym: (
+            good_stock
+            if sym == '0050'
+            else (_ for _ in ()).throw(StockNotFoundError(sym))
+        )
+        mock_us.get_us_stocks.return_value = []
+
+        tz = ZoneInfo('Asia/Taipei')
+        result = build_pnl_report(datetime(2026, 5, 22, 15, 0, tzinfo=tz))
+
+    full = '\n'.join(result)
+    assert '0050' in full
+    assert '資料讀取失敗' not in full

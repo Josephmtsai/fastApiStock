@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapistock.repositories import portfolio_repo
+from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services import stock_service, us_stock_service
 from fastapistock.services.news_service import get_sentiment_news
@@ -190,12 +191,27 @@ def build_pnl_report(now: datetime) -> list[str]:
 
     # --- TW ---
     tw_stocks: list[RichStockData] | None
+    tw_symbols: list[str] | None
     try:
         tw_symbols = list(portfolio_repo.fetch_portfolio().keys())
-        tw_stocks = stock_service.get_rich_tw_stocks(tw_symbols) if tw_symbols else []
     except Exception as exc:
         logger.error('TW portfolio fetch failed: %s', exc)
+        tw_symbols = None
+
+    if tw_symbols is None:
         tw_stocks = None
+    elif not tw_symbols:
+        tw_stocks = []
+    else:
+        tw_stocks = []
+        for sym in tw_symbols:
+            try:
+                result = stock_service.get_rich_tw_stock(sym)
+                tw_stocks.append(result)
+            except StockNotFoundError:
+                logger.warning('TW stock not found, skipping: %s', sym)
+            except Exception as exc:
+                logger.warning('TW stock fetch failed for %s: %s', sym, exc)
 
     # --- US ---
     us_stocks: list[RichStockData] | None

@@ -51,11 +51,14 @@ def fetch_news(symbol: str, market: Literal['TW', 'US']) -> list[NewsItem]:
         logger.warning('News fetch failed for %s: %s', symbol, exc)
         return []
 
-    items = [
-        NewsItem(title=str(n.get('title', '')), url=str(n.get('link', '')))
-        for n in raw_news[:_MAX_FETCH]
-        if n.get('title')
-    ]
+    items = []
+    for n in raw_news[:_MAX_FETCH]:
+        content: dict[str, object] = n.get('content') or {}  # type: ignore[assignment]
+        title = str(content.get('title') or n.get('title') or '')
+        canonical: dict[str, object] = content.get('canonicalUrl') or {}  # type: ignore[assignment]
+        url = str(canonical.get('url') or n.get('link') or '')
+        if title:
+            items.append(NewsItem(title=title, url=url))
 
     _cache.put(
         cache_key,
