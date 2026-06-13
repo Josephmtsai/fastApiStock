@@ -28,7 +28,7 @@ _TZ = ZoneInfo('Asia/Taipei')
 def is_tw_market_window(now: datetime) -> bool:
     """Return True when *now* falls in the Taiwan stock push window.
 
-    Window: Monday–Friday, 08:30–14:00 Asia/Taipei (inclusive).
+    Window: Monday–Friday, 09:30–14:00 Asia/Taipei (inclusive).
 
     Args:
         now: Current datetime; must already be in Asia/Taipei timezone.
@@ -39,7 +39,7 @@ def is_tw_market_window(now: datetime) -> bool:
     if now.weekday() > 4:  # Saturday=5, Sunday=6
         return False
     minutes = now.hour * 60 + now.minute
-    return 8 * 60 + 30 <= minutes <= 14 * 60
+    return 9 * 60 + 30 <= minutes <= 14 * 60
 
 
 def is_us_market_window(now: datetime) -> bool:

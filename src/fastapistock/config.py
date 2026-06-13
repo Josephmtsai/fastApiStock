@@ -76,6 +76,12 @@ LOG_FORMAT: str = os.getenv('LOG_FORMAT', 'json')
 SERVICE_NAME: str = os.getenv('SERVICE_NAME', 'fastapistock')
 ENVIRONMENT: str = os.getenv('ENVIRONMENT', 'production')
 
+# ---------------------------------------------------------------------------
+# Spec 013: FX rate (USD/TWD) cache and yfinance timeout
+# ---------------------------------------------------------------------------
+FX_CACHE_TTL: int = int(os.getenv('FX_CACHE_TTL', '14400'))
+YFINANCE_TIMEOUT: int = int(os.getenv('YFINANCE_TIMEOUT', '10'))
+
 
 def tw_stock_codes() -> list[str]:
     """Parse TW_STOCKS env var into a list of Taiwan stock codes.

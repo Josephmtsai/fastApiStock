@@ -49,11 +49,15 @@ def _dt(weekday_offset: int, hour: int, minute: int = 0) -> datetime:
 
 
 class TestTwMarketWindow:
-    def test_window_start_0830_monday_is_in(self) -> None:
-        assert is_tw_market_window(_dt(0, 8, 30)) is True
+    def test_window_start_0930_monday_is_in(self) -> None:
+        assert is_tw_market_window(_dt(0, 9, 30)) is True
 
-    def test_before_window_0829_monday_is_out(self) -> None:
-        assert is_tw_market_window(_dt(0, 8, 29)) is False
+    def test_before_window_0929_monday_is_out(self) -> None:
+        assert is_tw_market_window(_dt(0, 9, 29)) is False
+
+    def test_at_0830_monday_is_out(self) -> None:
+        # Regression guard: 08:30 must be outside window after 013-1 change
+        assert is_tw_market_window(_dt(0, 8, 30)) is False
 
     def test_window_end_1400_friday_is_in(self) -> None:
         assert is_tw_market_window(_dt(4, 14, 0)) is True
@@ -452,3 +456,35 @@ class TestDailyPnlJobTriggers:
         assert str(fields['hour']) == '4'
         assert str(fields['minute']) == '5'
         assert str(fields['day_of_week']) == 'tue-sat'
+
+
+# ── Timezone Guard ──────────────────────────────────────────────────────────
+
+
+class TestTwMarketWindowTimezone:
+    """Verify is_tw_market_window interprets .hour/.minute as Asia/Taipei wall clock.
+
+    The function contract requires callers to pass an Asia/Taipei-aware datetime.
+    _scheduled_push() always does datetime.now(_TZ) so production is safe.
+    These tests guard that the boundary logic is correct for Asia/Taipei times.
+    """
+
+    def test_0930_taipei_is_in_window(self) -> None:
+        """09:30 Asia/Taipei wall clock -> inside window."""
+        dt = datetime(2026, 4, 6, 9, 30, tzinfo=_TZ)
+        assert is_tw_market_window(dt) is True
+
+    def test_0929_taipei_is_out_of_window(self) -> None:
+        """09:29 Asia/Taipei wall clock -> outside window (one minute before open)."""
+        dt = datetime(2026, 4, 6, 9, 29, tzinfo=_TZ)
+        assert is_tw_market_window(dt) is False
+
+    def test_1400_taipei_is_in_window(self) -> None:
+        """14:00 Asia/Taipei wall clock -> inside window (last minute)."""
+        dt = datetime(2026, 4, 6, 14, 0, tzinfo=_TZ)
+        assert is_tw_market_window(dt) is True
+
+    def test_1401_taipei_is_out_of_window(self) -> None:
+        """14:01 Asia/Taipei wall clock -> outside window (one minute after close)."""
+        dt = datetime(2026, 4, 6, 14, 1, tzinfo=_TZ)
+        assert is_tw_market_window(dt) is False

@@ -12,6 +12,7 @@ from fastapistock.repositories.portfolio_repo import PortfolioEntry
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services import stock_service, us_stock_service
+from fastapistock.services.fx_service import get_usd_twd_rate
 from fastapistock.services.news_service import get_sentiment_news
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,30 @@ def _fmt_us_amount(amount: float) -> str:
     """
     sign = '+' if amount >= 0 else ''
     return f'{sign}US${amount:,.2f}'
+
+
+def _fmt_us_today_line(us_today: float, rate: float | None) -> str:
+    """Build the 美股今日 amount portion with optional TWD annotation.
+
+    When *rate* is provided, appends ``(≈NT$xx,xxx)`` after the USD amount.
+    The returned string is **unescaped**; callers must apply ``_esc()`` before
+    embedding in a MarkdownV2 message.
+
+    Args:
+        us_today: US daily P&L in USD.
+        rate: USD/TWD exchange rate, or None if unavailable.
+
+    Returns:
+        Raw (unescaped) amount string, e.g. ``'+US$1,257.93 (≈NT$40,883)'``
+        or ``'+US$1,257.93'`` when rate is None.
+    """
+    usd_str = _fmt_us_amount(us_today)
+    if rate is None:
+        return usd_str
+    twd_amount = round(us_today * rate)
+    sign = '+' if twd_amount >= 0 else ''
+    twd_str = f'{sign}{twd_amount:,.0f}'
+    return f'{usd_str} (≈NT${twd_str})'
 
 
 def _split_message(text: str) -> list[str]:
@@ -267,13 +292,19 @@ def build_pnl_report(now: datetime) -> list[str]:
         else ''
     )
 
+    fx_rate: float | None = None
+    try:
+        fx_rate = get_usd_twd_rate()
+    except Exception:
+        logger.warning('FX rate fetch raised unexpectedly; falling back to USD-only')
+
     tw_line = (
         f'🇹🇼 台股今日：{_esc(_fmt_tw_amount(tw_today))}{tw_holding_part}'
         if tw_today is not None
         else '🇹🇼 台股：資料讀取失敗'
     )
     us_line = (
-        f'🇺🇸 美股今日：{_esc(_fmt_us_amount(us_today))}{us_holding_part}'
+        f'🇺🇸 美股今日：{_esc(_fmt_us_today_line(us_today, fx_rate))}{us_holding_part}'
         if us_today is not None
         else '🇺🇸 美股：資料讀取失敗'
     )

@@ -13,6 +13,7 @@ from fastapistock.services.pnl_service import (
     _MSG_LIMIT,
     _calc_holding_pnl,
     _calc_market_today_pnl,
+    _fmt_us_today_line,
     _held_stocks,
     _split_message,
     build_pnl_report,
@@ -300,3 +301,187 @@ def test_build_pnl_report_tw_portfolio_shares_merged_into_rich_data() -> None:
     # Stock must appear in report (shares correctly merged from portfolio entry)
     assert '2330' in full
     assert '目前無持股' not in full
+
+
+# ── 013-3: _fmt_us_today_line unit tests ───────────────────────────────────
+
+
+def test_fmt_us_today_line_with_rate_contains_twd() -> None:
+    # AC-1: rate=32.5, us_today=1257.93 → round(1257.93 * 32.5) = 40883
+    result = _fmt_us_today_line(1257.93, 32.5)
+    assert '≈NT$' in result
+    assert '40,883' in result
+
+
+def test_fmt_us_today_line_without_rate_matches_fmt_us_amount() -> None:
+    # AC-2: rate=None → identical to _fmt_us_amount output
+    from fastapistock.services.pnl_service import _fmt_us_amount
+
+    result = _fmt_us_today_line(1257.93, None)
+    assert result == _fmt_us_amount(1257.93)
+    assert '≈NT$' not in result
+
+
+def test_fmt_us_today_line_negative_today_with_rate() -> None:
+    # AC-3: us_today=-100.0, rate=32.5 → twd=-3250 → '≈NT$-3,250'
+    result = _fmt_us_today_line(-100.0, 32.5)
+    assert '≈NT$' in result
+    assert '-3,250' in result
+
+
+def test_fmt_us_today_line_zero_today_with_rate() -> None:
+    # AC-4: us_today=0.0, rate=32.5 → twd=0 → sign '+', '≈NT$+0' or '≈NT$0'
+    result = _fmt_us_today_line(0.0, 32.5)
+    assert '≈NT$' in result
+    assert '0' in result
+    # Sign prefix: twd_amount == 0, so sign='+', formatted as '+0'
+    assert '+0' in result
+
+
+def test_build_pnl_report_includes_twd_when_rate_available() -> None:
+    # AC-1 (integration): build_pnl_report embeds TWD conversion in us_line
+    us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=500.0)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+        patch('fastapistock.services.pnl_service.get_usd_twd_rate', return_value=32.5),
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {'AAPL': _pe('AAPL', shares=10)}
+        mock_ss.get_rich_tw_stock.return_value = _make_rich('AAPL', 'TW')
+        mock_us.get_us_stocks.return_value = [us_stock]
+
+        now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '≈NT' in full
+
+
+def test_build_pnl_report_fallback_when_rate_none() -> None:
+    # AC-2 (integration): report still renders without TWD when rate=None
+    us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=500.0)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service'),
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+        patch('fastapistock.services.pnl_service.get_usd_twd_rate', return_value=None),
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {'AAPL': _pe('AAPL', shares=10)}
+        mock_us.get_us_stocks.return_value = [us_stock]
+
+        now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '美股今日' in full
+    assert '≈NT' not in full
+
+
+def test_build_pnl_report_rate_exception_does_not_break_report() -> None:
+    # AC-5: get_usd_twd_rate raises Exception → report still sent
+    us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=500.0)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service'),
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+        patch(
+            'fastapistock.services.pnl_service.get_usd_twd_rate',
+            side_effect=RuntimeError('redis down'),
+        ),
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {'AAPL': _pe('AAPL', shares=10)}
+        mock_us.get_us_stocks.return_value = [us_stock]
+
+        now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)  # must not raise
+
+    full = '\n'.join(result)
+    assert '美股今日' in full
+
+
+def test_build_pnl_report_holding_part_remains_usd_only() -> None:
+    # AC-6: 持倉 column stays in USD regardless of FX rate
+    us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=54560.84)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service'),
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+        patch('fastapistock.services.pnl_service.get_usd_twd_rate', return_value=32.5),
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {
+            'AAPL': _pe('AAPL', shares=10, pnl=54560.84)
+        }
+        mock_us.get_us_stocks.return_value = [us_stock]
+
+        now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    # 持倉 line must contain US$ (USD) not ≈NT$ (TWD)
+    # Find the 持倉 portion in the account overview line
+    assert 'US$' in full  # holding is still in USD
+
+
+# ---------------------------------------------------------------------------
+# Extra edge cases (QA additions)
+# ---------------------------------------------------------------------------
+
+
+def test_build_pnl_report_tw_stock_generic_exception_skipped() -> None:
+    """When a TW stock fetch raises a generic Exception (not StockNotFoundError),
+    that stock is skipped but the rest of the report is still built (lines 263-264)."""
+    good_stock = _make_rich('0050', 'TW', shares=100)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+    ):
+        mock_pr.fetch_portfolio.return_value = {
+            '9999': _pe('9999'),
+            '0050': _pe('0050'),
+        }
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_ss.get_rich_tw_stock.side_effect = lambda sym: (
+            good_stock
+            if sym == '0050'
+            else (_ for _ in ()).throw(ValueError('unexpected error'))
+        )
+        mock_us.get_us_stocks.return_value = []
+
+        tz = ZoneInfo('Asia/Taipei')
+        result = build_pnl_report(datetime(2026, 5, 22, 15, 0, tzinfo=tz))
+
+    full = '\n'.join(result)
+    # Good stock still rendered; report not broken
+    assert '0050' in full
+    assert '資料讀取失敗' not in full
+
+
+def test_fmt_us_today_line_large_positive_rate_formats_correctly() -> None:
+    """Verify thousand-separator formatting for large TWD amounts."""
+    # us_today=10000.0, rate=32.5 -> twd=325000 -> '325,000'
+    result = _fmt_us_today_line(10000.0, 32.5)
+    assert '325,000' in result
+    assert '+325,000' in result  # sign prefix applied
+
+
+def test_fmt_us_today_line_very_small_positive_rounds_to_zero() -> None:
+    """us_today close to zero rounds to twd=0 with + prefix."""
+    # us_today=0.001, rate=32.5 -> twd=round(0.0325)=0 -> '+0'
+    result = _fmt_us_today_line(0.001, 32.5)
+    assert '+0' in result

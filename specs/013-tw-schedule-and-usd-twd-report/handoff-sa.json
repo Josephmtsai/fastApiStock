@@ -1,0 +1,20 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "013-tw-schedule-and-usd-twd-report",
+  "status": "ready",
+  "summary": "調整台股推播時間窗下界 08:30→09:30，並在每日損益報告美股今日欄位附加 USD→TWD 換算（新增 fx_service + Redis cache，失敗時 fallback 不中斷報告）。",
+  "artifacts": [
+    "specs/013-tw-schedule-and-usd-twd-report/spec.md",
+    "specs/013-tw-schedule-and-usd-twd-report/tasks.md"
+  ],
+  "assumptions": [
+    "yfinance `TWD=X` ticker 以 `period='1d'` 查詢當日收盤匯率，週末或假日時會回傳最近交易日的 Close，此行為可接受。",
+    "持倉損益（holding P&L）維持 USD 顯示，本次只換算今日損益（daily today P&L）。",
+    "FX cache TTL 預設 4 小時（14400 秒），每日報告在 14:35 與 04:05 各觸發一次，每次報告最多呼叫一次 yfinance。",
+    "TWD 換算金額四捨五入至整數（無小數點），符合台幣日常顯示慣例。",
+    "YFINANCE_TIMEOUT 環境變數控制 yfinance HTTP timeout，預設 10 秒，與 CLAUDE.md 外部請求 timeout 要求一致。",
+    "013-1（scheduler）與 013-2（fx_service）可平行開發；013-3（pnl_service 修改）必須在 013-2 完成後進行。",
+    "test_scheduler.py 中的 `_dt()` helper 基準日（2026-04-06 Monday）保持不變，只調整被測試的 hour/minute 值。"
+  ]
+}
