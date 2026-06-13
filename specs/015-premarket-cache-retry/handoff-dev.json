@@ -1,0 +1,17 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "015-premarket-cache-retry",
+  "status": "ready",
+  "summary": "Added exponential backoff retry (up to PREMARKET_MAX_RETRIES times) to _fetch_premarket_price via extracted helper _attempt_premarket_fetch; changed _cache_key in us_stock_service to include UTC hour to prevent pre-market cache bleed into regular session; added 2 config constants; updated 2 existing tests to patch sleep; added 5 repo retry tests and 3 cache key service tests; all 674 tests pass, ruff clean, mypy clean, us_stock_repo.py at 100% coverage.",
+  "changed_files": [
+    "src/fastapistock/config.py",
+    "src/fastapistock/repositories/us_stock_repo.py",
+    "src/fastapistock/services/us_stock_service.py",
+    "tests/test_us_stock_repo.py",
+    "tests/test_us_stock_service.py",
+    ".env.example",
+    "specs/015-premarket-cache-retry/handoff-dev.json"
+  ],
+  "ac_ref": "specs/015-premarket-cache-retry/tasks.md"
+}

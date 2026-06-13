@@ -1,0 +1,19 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "015-premarket-cache-retry",
+  "status": "ready",
+  "summary": "在 _fetch_premarket_price 加入最多 3 次指數退避重試、並將 us_stock_service 的 cache key 改為含 UTC hour 的小時粒度，避免盤前快取殘留到盤中",
+  "artifacts": [
+    "specs/015-premarket-cache-retry/spec.md",
+    "specs/015-premarket-cache-retry/tasks.md"
+  ],
+  "assumptions": [
+    "重試邏輯僅限 _fetch_premarket_price 內的 yfinance 1-minute history 呼叫，不延伸至 fetch_us_stock 的日線 history 呼叫",
+    "指數退避以 time.sleep 實作（同步），因 _fetch_premarket_price 在 worker thread 中執行，無需 asyncio.sleep",
+    "Cache key 格式改用 UTC hour（非 ET hour），與 date.today() 的 UTC 基準一致，避免跨日歧義",
+    "PREMARKET_MAX_RETRIES 預設值 3、PREMARKET_RETRY_BASE_SLEEP 預設值 1.0 秒，可由環境變數覆寫",
+    "舊格式 Redis key（不含 hour）在 Railway 重啟後自然因 US_STOCK_CACHE_TTL 過期，無需主動清除",
+    "不新增任何 HTTP 路由，現有 API 行為不改變"
+  ]
+}
