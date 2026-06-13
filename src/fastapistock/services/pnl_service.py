@@ -286,9 +286,14 @@ def build_pnl_report(now: datetime) -> list[str]:
         if tw_held
         else ''
     )
+    pnl_us_twd: float | None = None
+    try:
+        pnl_us_twd = portfolio_repo.fetch_pnl_us()
+    except Exception:
+        logger.warning('fetch_pnl_us raised unexpectedly; hiding US holding part')
     us_holding_part = (
-        f' ｜ 持倉：{_esc(_fmt_us_amount(_calc_holding_pnl(us_held)))}'
-        if us_held
+        f' ｜ 持倉：{_esc(_fmt_tw_amount(pnl_us_twd))}'
+        if pnl_us_twd is not None
         else ''
     )
 

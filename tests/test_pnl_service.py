@@ -137,6 +137,7 @@ def test_build_pnl_report_returns_list_of_strings() -> None:
         mock_pr.fetch_portfolio_us.return_value = {
             'AAPL': _pe('AAPL', shares=10, pnl=-800.0)
         }
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = [us_stock]
 
@@ -161,6 +162,7 @@ def test_build_pnl_report_tw_fetch_failure_shows_error() -> None:
     ):
         mock_pr.fetch_portfolio.side_effect = Exception('sheets down')
         mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_us.get_us_stocks.return_value = []
 
         now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -188,6 +190,7 @@ def test_build_pnl_report_shows_news_in_stock_row() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
         mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
 
@@ -209,6 +212,7 @@ def test_build_pnl_report_us_fetch_failure_shows_error() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
         mock_pr.fetch_portfolio_us.side_effect = Exception('us sheets down')
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
 
@@ -233,6 +237,7 @@ def test_build_pnl_report_news_exception_shows_no_news() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
         mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.return_value = tw_stock
         mock_us.get_us_stocks.return_value = []
 
@@ -260,6 +265,7 @@ def test_build_pnl_report_one_tw_stock_not_found_still_renders_others() -> None:
             '0050': _pe('0050'),
         }
         mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.side_effect = lambda sym: (
             good_stock
             if sym == '0050'
@@ -291,6 +297,7 @@ def test_build_pnl_report_tw_portfolio_shares_merged_into_rich_data() -> None:
             '2330': _pe('2330', shares=500, avg_cost=650.0, pnl=12500.0)
         }
         mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.return_value = bare_stock
         mock_us.get_us_stocks.return_value = []
 
@@ -351,6 +358,7 @@ def test_build_pnl_report_includes_twd_when_rate_available() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {}
         mock_pr.fetch_portfolio_us.return_value = {'AAPL': _pe('AAPL', shares=10)}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.return_value = _make_rich('AAPL', 'TW')
         mock_us.get_us_stocks.return_value = [us_stock]
 
@@ -374,6 +382,7 @@ def test_build_pnl_report_fallback_when_rate_none() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {}
         mock_pr.fetch_portfolio_us.return_value = {'AAPL': _pe('AAPL', shares=10)}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_us.get_us_stocks.return_value = [us_stock]
 
         now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -400,6 +409,7 @@ def test_build_pnl_report_rate_exception_does_not_break_report() -> None:
     ):
         mock_pr.fetch_portfolio.return_value = {}
         mock_pr.fetch_portfolio_us.return_value = {'AAPL': _pe('AAPL', shares=10)}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_us.get_us_stocks.return_value = [us_stock]
 
         now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
@@ -409,8 +419,8 @@ def test_build_pnl_report_rate_exception_does_not_break_report() -> None:
     assert '美股今日' in full
 
 
-def test_build_pnl_report_holding_part_remains_usd_only() -> None:
-    # AC-6: 持倉 column stays in USD regardless of FX rate
+def test_build_pnl_report_holding_part_displays_twd() -> None:
+    # AC-1: 持倉 column shows TWD value from H21 (fetch_pnl_us)
     us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=54560.84)
 
     with (
@@ -424,15 +434,70 @@ def test_build_pnl_report_holding_part_remains_usd_only() -> None:
         mock_pr.fetch_portfolio_us.return_value = {
             'AAPL': _pe('AAPL', shares=10, pnl=54560.84)
         }
+        mock_pr.fetch_pnl_us.return_value = 1_780_231.0
+        mock_pr.fetch_pnl_tw.return_value = None
         mock_us.get_us_stocks.return_value = [us_stock]
 
         now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
         result = build_pnl_report(now)
 
     full = '\n'.join(result)
-    # 持倉 line must contain US$ (USD) not ≈NT$ (TWD)
-    # Find the 持倉 portion in the account overview line
-    assert 'US$' in full  # holding is still in USD
+    assert 'NT$1,780,231' in full  # holding shows TWD from H21
+
+
+def test_build_pnl_report_holding_hidden_when_pnl_us_none() -> None:
+    # AC-2: when fetch_pnl_us returns None, holding part is omitted
+    us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=54560.84)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service'),
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+        patch('fastapistock.services.pnl_service.get_usd_twd_rate', return_value=32.5),
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {
+            'AAPL': _pe('AAPL', shares=10, pnl=54560.84)
+        }
+        mock_pr.fetch_pnl_us.return_value = None
+        mock_pr.fetch_pnl_tw.return_value = None
+        mock_us.get_us_stocks.return_value = [us_stock]
+
+        now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '美股今日' in full  # report still sends
+    # No holding segment when H21 is None
+    overview_line = next((ln for ln in full.splitlines() if '美股今日' in ln), '')
+    assert '持倉：' not in overview_line
+
+
+def test_build_pnl_report_holding_hidden_when_fetch_pnl_us_raises() -> None:
+    # AC-3: when fetch_pnl_us raises, holding part is omitted and report continues
+    us_stock = _make_rich('AAPL', 'US', change=10.0, shares=10, unrealized_pnl=54560.84)
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service'),
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch('fastapistock.services.pnl_service.get_sentiment_news', return_value=[]),
+        patch('fastapistock.services.pnl_service.get_usd_twd_rate', return_value=32.5),
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {
+            'AAPL': _pe('AAPL', shares=10, pnl=54560.84)
+        }
+        mock_pr.fetch_pnl_us.side_effect = RuntimeError('network error')
+        mock_pr.fetch_pnl_tw.return_value = None
+        mock_us.get_us_stocks.return_value = [us_stock]
+
+        now = datetime(2026, 6, 13, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)  # must not raise
+
+    full = '\n'.join(result)
+    assert '美股今日' in full
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +521,7 @@ def test_build_pnl_report_tw_stock_generic_exception_skipped() -> None:
             '0050': _pe('0050'),
         }
         mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
         mock_ss.get_rich_tw_stock.side_effect = lambda sym: (
             good_stock
             if sym == '0050'
