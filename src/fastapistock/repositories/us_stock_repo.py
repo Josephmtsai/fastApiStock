@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
+from fastapistock.config import PREMARKET_MAX_RETRIES, PREMARKET_RETRY_BASE_SLEEP
 from fastapistock.repositories.twstock_repo import StockNotFoundError
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services import indicators as ind_svc
@@ -27,47 +28,80 @@ _PREMARKET_START = dt_time(4, 0)
 _PREMARKET_END = dt_time(9, 30)
 
 
-def _fetch_premarket_price(ticker: yf.Ticker) -> float | None:
-    """Fetch the latest pre-market close price for a US ticker.
-
-    Returns None immediately when the wall-clock (Eastern Time) is outside
-    04:00–09:30, preventing historical pre-market candles from being
-    misreported as a live pre-market price after the regular session opens.
+def _attempt_premarket_fetch(ticker: yf.Ticker) -> float | None:
+    """Execute one yfinance 1-minute history call and extract the pre-market close.
 
     Args:
         ticker: An initialised yfinance Ticker instance.
 
     Returns:
-        Rounded pre-market close price, or None when no data is available
-        or when the current ET time is outside the pre-market window.
+        Rounded pre-market close price on success.
+
+    Raises:
+        ValueError: When the returned DataFrame is empty (treated as retryable).
+        Exception: Propagates any yfinance network or parsing error (retryable).
+    """
+    hist: pd.DataFrame = ticker.history(
+        period='1d',
+        interval='1m',
+        prepost=True,
+        timeout=_REQUEST_TIMEOUT,
+    )
+    if hist.empty:
+        raise ValueError('Empty pre-market history')
+
+    hist.index = hist.index.tz_convert(_ET_TZ)
+    times = hist.index.time  # numpy.ndarray of datetime.time objects
+    mask = pd.array(
+        [_PREMARKET_START <= t < _PREMARKET_END for t in times],
+        dtype='boolean',
+    )
+    premarket = hist[mask]
+    if premarket.empty:
+        return None
+
+    return round(float(premarket['Close'].iloc[-1]), 2)
+
+
+def _fetch_premarket_price(ticker: yf.Ticker) -> float | None:
+    """Fetch the latest pre-market close price for a US ticker with retry.
+
+    Returns None immediately when the wall-clock (Eastern Time) is outside
+    04:00–09:30, preventing historical pre-market candles from being
+    misreported as a live pre-market price after the regular session opens.
+
+    On transient failures (empty DataFrame or network exception) the function
+    retries up to PREMARKET_MAX_RETRIES times with exponential backoff
+    (base sleep PREMARKET_RETRY_BASE_SLEEP, doubles each attempt).
+
+    Args:
+        ticker: An initialised yfinance Ticker instance.
+
+    Returns:
+        Rounded pre-market close price, or None when all attempts fail or
+        the current ET time is outside the pre-market window.
     """
     now_et = datetime.now(_ET_TZ).time()
     if not (_PREMARKET_START <= now_et < _PREMARKET_END):
         return None
-    try:
-        hist: pd.DataFrame = ticker.history(
-            period='1d',
-            interval='1m',
-            prepost=True,
-            timeout=_REQUEST_TIMEOUT,
-        )
-        if hist.empty:
-            return None
 
-        hist.index = hist.index.tz_convert(_ET_TZ)
-        times = hist.index.time  # numpy.ndarray of datetime.time objects
-        mask = pd.array(
-            [_PREMARKET_START <= t < _PREMARKET_END for t in times],
-            dtype='boolean',
-        )
-        premarket = hist[mask]
-        if premarket.empty:
-            return None
-
-        return round(float(premarket['Close'].iloc[-1]), 2)
-    except Exception:
-        logger.warning('Failed to fetch pre-market price', exc_info=True)
-        return None
+    attempt = 0
+    sleep_s = PREMARKET_RETRY_BASE_SLEEP
+    while attempt <= PREMARKET_MAX_RETRIES:
+        try:
+            return _attempt_premarket_fetch(ticker)
+        except Exception as exc:
+            logger.warning(
+                'Pre-market fetch attempt %d/%d failed: %s',
+                attempt + 1,
+                PREMARKET_MAX_RETRIES + 1,
+                exc,
+            )
+            attempt += 1
+            if attempt <= PREMARKET_MAX_RETRIES:
+                time.sleep(sleep_s)
+                sleep_s *= 2
+    return None
 
 
 def fetch_us_stock(symbol: str) -> RichStockData:

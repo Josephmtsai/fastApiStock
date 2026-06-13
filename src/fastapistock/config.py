@@ -82,6 +82,14 @@ ENVIRONMENT: str = os.getenv('ENVIRONMENT', 'production')
 FX_CACHE_TTL: int = int(os.getenv('FX_CACHE_TTL', '14400'))
 YFINANCE_TIMEOUT: int = int(os.getenv('YFINANCE_TIMEOUT', '10'))
 
+# ---------------------------------------------------------------------------
+# Spec 015: Pre-market cache + retry
+# ---------------------------------------------------------------------------
+PREMARKET_MAX_RETRIES: int = int(os.getenv('PREMARKET_MAX_RETRIES', '3'))
+PREMARKET_RETRY_BASE_SLEEP: float = float(
+    os.getenv('PREMARKET_RETRY_BASE_SLEEP', '1.0')
+)
+
 
 def tw_stock_codes() -> list[str]:
     """Parse TW_STOCKS env var into a list of Taiwan stock codes.

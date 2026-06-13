@@ -93,8 +93,16 @@ def test_fetch_premarket_price_returns_value_during_premarket(
     assert result == pytest.approx(185.5, rel=0.001)
 
 
+@patch('fastapistock.repositories.us_stock_repo.time.sleep')
 @patch(_PATCH_DATETIME)
-def test_fetch_premarket_price_returns_none_on_empty_hist(mock_dt: MagicMock) -> None:
+def test_fetch_premarket_price_returns_none_on_empty_hist(
+    mock_dt: MagicMock,
+    _mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        'fastapistock.repositories.us_stock_repo.PREMARKET_MAX_RETRIES', 0
+    )
     mock_dt.now.return_value = _PREMARKET_NOW
     ticker = MagicMock()
     ticker.history.return_value = pd.DataFrame()
@@ -126,8 +134,16 @@ def test_fetch_premarket_price_returns_none_when_no_premarket_rows(
     assert _fetch_premarket_price(ticker) is None
 
 
+@patch('fastapistock.repositories.us_stock_repo.time.sleep')
 @patch(_PATCH_DATETIME)
-def test_fetch_premarket_price_returns_none_on_exception(mock_dt: MagicMock) -> None:
+def test_fetch_premarket_price_returns_none_on_exception(
+    mock_dt: MagicMock,
+    _mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        'fastapistock.repositories.us_stock_repo.PREMARKET_MAX_RETRIES', 0
+    )
     mock_dt.now.return_value = _PREMARKET_NOW
     ticker = MagicMock()
     ticker.history.side_effect = RuntimeError('network error')
@@ -254,3 +270,241 @@ def test_premarket_price_none_outside_premarket(
     result = fetch_us_stock('AAPL')
 
     assert result.premarket_price is None
+
+
+# ---------------------------------------------------------------------------
+# Task 015-4: Retry logic unit tests
+# ---------------------------------------------------------------------------
+
+_PATCH_SLEEP = 'fastapistock.repositories.us_stock_repo.time.sleep'
+_MAX_RETRIES_ATTR = 'fastapistock.repositories.us_stock_repo.PREMARKET_MAX_RETRIES'
+_BASE_SLEEP_ATTR = 'fastapistock.repositories.us_stock_repo.PREMARKET_RETRY_BASE_SLEEP'
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_retry_succeeds_on_second_attempt(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First call returns empty DataFrame; second call returns valid data."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _PREMARKET_NOW
+
+    ticker = MagicMock()
+    ticker.history.side_effect = [pd.DataFrame(), _make_premarket_hist(190.0)]
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result == pytest.approx(190.0, rel=0.001)
+    mock_sleep.assert_called_once_with(1.0)
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_retry_exhausted_returns_none(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All (MAX_RETRIES + 1) attempts raise Exception; must return None."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _PREMARKET_NOW
+
+    ticker = MagicMock()
+    ticker.history.side_effect = RuntimeError('timeout')
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    assert mock_sleep.call_count == 3
+    sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+    assert sleep_calls == pytest.approx([1.0, 2.0, 4.0])
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_retry_empty_df_all_attempts_returns_none(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty DataFrame on every attempt is treated as retryable; returns None."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _PREMARKET_NOW
+
+    ticker = MagicMock()
+    ticker.history.return_value = pd.DataFrame()
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    assert mock_sleep.call_count == 3
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_no_retry_outside_window(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ET time >= 09:30 must short-circuit before any history call or sleep."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _POSTMARKET_NOW
+
+    ticker = MagicMock()
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    ticker.history.assert_not_called()
+    mock_sleep.assert_not_called()
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_max_retries_zero_no_sleep(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PREMARKET_MAX_RETRIES=0 means one attempt only; sleep must not be called."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 0)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _PREMARKET_NOW
+
+    ticker = MagicMock()
+    ticker.history.side_effect = RuntimeError('network error')
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    ticker.history.assert_called_once()
+    mock_sleep.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# QA-added edge case tests: ET window boundaries and custom base sleep
+# ---------------------------------------------------------------------------
+
+_BOUNDARY_04_00 = datetime(2025, 1, 2, 4, 0, 0, tzinfo=_ET)  # exactly 04:00 — inclusive
+_BOUNDARY_09_29 = datetime(
+    2025, 1, 2, 9, 29, 0, tzinfo=_ET
+)  # 09:29 — last valid minute
+_BOUNDARY_03_59 = datetime(2025, 1, 2, 3, 59, 0, tzinfo=_ET)  # 03:59 — before window
+_BOUNDARY_09_30 = datetime(
+    2025, 1, 2, 9, 30, 0, tzinfo=_ET
+)  # exactly 09:30 — exclusive
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_window_boundary_exactly_0400_is_inside(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ET 04:00:00 is the inclusive lower bound — fetch must be attempted."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 0)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _BOUNDARY_04_00
+
+    ticker = MagicMock()
+    ticker.history.return_value = _make_premarket_hist(180.0)
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result == pytest.approx(180.0, rel=0.001)
+    ticker.history.assert_called_once()
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_window_boundary_0929_is_inside(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ET 09:29 is the last valid minute — fetch must be attempted."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 0)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _BOUNDARY_09_29
+
+    ticker = MagicMock()
+    ticker.history.return_value = _make_premarket_hist(182.0)
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result == pytest.approx(182.0, rel=0.001)
+    ticker.history.assert_called_once()
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_window_boundary_0359_is_outside(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ET 03:59 is before pre-market window; short-circuits without any call."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _BOUNDARY_03_59
+
+    ticker = MagicMock()
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    ticker.history.assert_not_called()
+    mock_sleep.assert_not_called()
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_window_boundary_exactly_0930_is_outside(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ET 09:30:00 is the exclusive upper bound; short-circuits without any call."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 1.0)
+    mock_dt.now.return_value = _BOUNDARY_09_30
+
+    ticker = MagicMock()
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    ticker.history.assert_not_called()
+    mock_sleep.assert_not_called()
+
+
+@patch(_PATCH_SLEEP)
+@patch(_PATCH_DATETIME)
+def test_premarket_retry_uses_custom_base_sleep(
+    mock_dt: MagicMock,
+    mock_sleep: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With PREMARKET_RETRY_BASE_SLEEP=0.5 the sleep sequence must be 0.5, 1.0, 2.0."""
+    monkeypatch.setattr(_MAX_RETRIES_ATTR, 3)
+    monkeypatch.setattr(_BASE_SLEEP_ATTR, 0.5)
+    mock_dt.now.return_value = _PREMARKET_NOW
+
+    ticker = MagicMock()
+    ticker.history.side_effect = RuntimeError('timeout')
+
+    result = _fetch_premarket_price(ticker)
+
+    assert result is None
+    assert mock_sleep.call_count == 3
+    sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+    assert sleep_calls == pytest.approx([0.5, 1.0, 2.0])

@@ -7,7 +7,7 @@ a distinct Redis key prefix ('us_stock:').
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapistock.cache import redis_cache
@@ -22,15 +22,20 @@ _US_PORTFOLIO_CACHE_KEY = 'portfolio:us'
 
 
 def _cache_key(symbol: str) -> str:
-    """Build the Redis cache key for today's US stock snapshot.
+    """Build the Redis cache key for the current UTC-hour US stock snapshot.
+
+    The key includes the UTC hour so pre-market keys (e.g. fetched at 09:00 UTC)
+    do not collide with regular-session keys (e.g. fetched at 14:00 UTC),
+    preventing stale pre-market prices from being served after market open.
 
     Args:
         symbol: US stock ticker in uppercase (e.g. 'AAPL').
 
     Returns:
-        Cache key string (e.g. ``'us_stock:AAPL:2026-04-04'``).
+        Cache key string (e.g. ``'us_stock:AAPL:2026-06-13:14'``).
     """
-    return f'us_stock:{symbol}:{date.today().isoformat()}'
+    now = datetime.now(UTC)
+    return f'us_stock:{symbol}:{now.date().isoformat()}:{now.hour}'
 
 
 def get_us_stock(symbol: str) -> RichStockData:
