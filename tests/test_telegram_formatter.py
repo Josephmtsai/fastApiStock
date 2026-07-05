@@ -165,6 +165,23 @@ class TestFormatRichStockMessage:
             f'Unescaped dash in score: {raw_score!r}'
         )
 
+    def test_bearish_verdict_uses_down_chart_emoji_and_escaped_score(self) -> None:
+        # score <= -3 → '偏看跌' verdict → 📉 emoji; negative score renders r'\-4'
+        stock = _make_stock(price=80.0, rsi=75.0, ma50=95.0).model_copy(
+            update={
+                'macd_hist': -0.5,
+                'change': -3.0,
+                'change_pct': -3.6,
+                'bb_upper': 105.0,
+                'bb_lower': 85.0,
+            }
+        )
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '📉' in msg
+        assert '看跌' in msg
+        assert r'評分 \-4/8' in msg
+
     def test_footer_present(self) -> None:
         stock = _make_stock()
         now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
@@ -442,6 +459,30 @@ class TestIndicatorSummaryLine:
         assert summary is not None
         assert 'BB' not in summary
 
+    def test_bb_negative_range_omitted_no_error(self) -> None:
+        # Malformed data (upper < lower) must not raise nor emit a BB segment.
+        summary = _build_indicator_summary(
+            _summary_stock(bb_upper=90.0, bb_lower=100.0)
+        )
+        assert summary is not None
+        assert 'BB' not in summary
+
+    def test_bb_pos_exact_085_boundary_omitted(self) -> None:
+        # bb_pos = (102 - 85) / (105 - 85) = 0.85 exactly → strict '>' → omitted
+        summary = _build_indicator_summary(
+            _summary_stock(price=102.0, bb_upper=105.0, bb_lower=85.0)
+        )
+        assert summary is not None
+        assert 'BB' not in summary
+
+    def test_bb_pos_exact_015_boundary_omitted(self) -> None:
+        # bb_pos = (88 - 85) / (105 - 85) = 0.15 exactly → strict '<' → omitted
+        summary = _build_indicator_summary(
+            _summary_stock(price=88.0, bb_upper=105.0, bb_lower=85.0)
+        )
+        assert summary is not None
+        assert 'BB' not in summary
+
     # -- AC-1.7 / E6: volume ratio --------------------------------------------
     def test_volume_ratio_format(self) -> None:
         summary = _build_indicator_summary(
@@ -459,6 +500,27 @@ class TestIndicatorSummaryLine:
         summary = _build_indicator_summary(_summary_stock(volume=0))
         assert summary is not None
         assert '量' not in summary
+
+    def test_negative_volume_omitted_no_error(self) -> None:
+        # Defensive: schema does not forbid negatives; guard is strict '> 0'.
+        summary = _build_indicator_summary(_summary_stock(volume=-5))
+        assert summary is not None
+        assert '量' not in summary
+
+    def test_negative_volume_avg20_omitted_no_error(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(volume_avg20=-5))
+        assert summary is not None
+        assert '量' not in summary
+
+    def test_extreme_volume_ratio_no_crash_and_escaped(self) -> None:
+        # ratio = 10**12 / 1 → '量 1000000000000.0x'; '.' must be escaped in msg
+        stock = _summary_stock(volume=10**12, volume_avg20=1)
+        summary = _build_indicator_summary(stock)
+        assert summary is not None
+        assert '量 1000000000000.0x' in summary
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '量 1000000000000\\.0x' in msg
 
     # -- E1: all indicators missing → no summary line -------------------------
     def test_all_indicators_missing_returns_none(self) -> None:
