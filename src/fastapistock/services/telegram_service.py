@@ -298,6 +298,52 @@ def _build_price_change_lines(stock: RichStockData, currency: str) -> tuple[str,
     return price_line, change_line
 
 
+def _build_indicator_summary(stock: RichStockData) -> str | None:
+    """Build the one-line symbol summary, e.g. 'RSI 72⚠️ │ MACD ✚ │ MA20↑'.
+
+    Segments (in order): RSI, MACD, MA20/MA50, BB, Volume. Each segment is
+    omitted when its inputs are missing or neutral (spec 016 Data Contracts).
+    Segments are joined with ' │ ' (U+2502); the MACD bearish symbol is '─'
+    (U+2500). Caller escapes via _escape_md and prefixes indentation.
+
+    Args:
+        stock: RichStockData containing price and indicator fields.
+
+    Returns:
+        Joined summary string, or None when no segment exists.
+    """
+    segments: list[str] = []
+
+    if stock.rsi is not None:
+        warn = '⚠️' if stock.rsi >= 70 or stock.rsi <= 30 else ''
+        segments.append(f'RSI {stock.rsi:.0f}{warn}')
+
+    if stock.macd_hist is not None and stock.macd_hist != 0:
+        segments.append('MACD ✚' if stock.macd_hist > 0 else 'MACD ─')
+
+    ma_parts: list[str] = []
+    if stock.ma20 is not None:
+        ma_parts.append(f'MA20{"↑" if stock.price > stock.ma20 else "↓"}')
+    if stock.ma50 is not None:
+        ma_parts.append(f'MA50{"↑" if stock.price > stock.ma50 else "↓"}')
+    if ma_parts:
+        segments.append(' '.join(ma_parts))
+
+    if stock.bb_upper is not None and stock.bb_lower is not None:
+        bb_range = stock.bb_upper - stock.bb_lower
+        if bb_range > 0:
+            bb_pos = (stock.price - stock.bb_lower) / bb_range
+            if bb_pos > 0.85:
+                segments.append('BB 高檔')
+            elif bb_pos < 0.15:
+                segments.append('BB 低檔')
+
+    if stock.volume > 0 and stock.volume_avg20 > 0:
+        segments.append(f'量 {stock.volume / stock.volume_avg20:.1f}x')
+
+    return ' │ '.join(segments) if segments else None
+
+
 def _format_rich_block(stock: RichStockData) -> str:
     """Build a single stock's MarkdownV2 block with technical indicators.
 
@@ -334,21 +380,9 @@ def _format_rich_block(stock: RichStockData) -> str:
             pnl_abs = f'{pnl_abs_sign}{stock.unrealized_pnl:,.0f}'
             lines.append(f'   損益: `{pnl_abs} {currency}`')
 
-    if stock.rsi is not None:
-        rsi_tag = (
-            '  ⚠️超買' if stock.rsi >= 70 else ('  ⚠️超賣' if stock.rsi <= 30 else '')
-        )
-        lines.append(f'   RSI\\(14\\): `{stock.rsi:.1f}`{rsi_tag}')
-
-    ma_parts = []
-    if stock.ma20 is not None:
-        d = '↑' if stock.price > stock.ma20 else '↓'
-        ma_parts.append(f'MA20:{stock.ma20:.0f}{d}')
-    if stock.ma50 is not None:
-        d = '↑' if stock.price > stock.ma50 else '↓'
-        ma_parts.append(f'MA50:{stock.ma50:.0f}{d}')
-    if ma_parts:
-        lines.append(f'   均線: `{"  ".join(ma_parts)}`')
+    summary = _build_indicator_summary(stock)
+    if summary is not None:
+        lines.append(f'   {_escape_md(summary)}')
 
     if stock.week52_high is not None and stock.week52_low is not None:
         h, l_v = stock.week52_high, stock.week52_low
@@ -385,10 +419,6 @@ def _format_rich_block(stock: RichStockData) -> str:
     lines.append('   ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄')
     score_esc = _escape_md(str(result.score))
     lines.append(f'   {emoji} *{_escape_md(result.verdict)}* \\(評分 {score_esc}/8\\)')
-    for reason in result.bull_reasons:
-        lines.append(f'   ✅ {_escape_md(reason)}')
-    for reason in result.bear_reasons:
-        lines.append(f'   ❌ {_escape_md(reason)}')
 
     signal = _calc_cost_signal(
         stock.price,
@@ -426,7 +456,8 @@ def format_rich_stock_message(
     for stock in stocks:
         lines.append(_format_rich_block(stock))
         lines.append('')
-    lines += [sep, '_由 FastAPI Stock Bot 自動產生_']
+    legend = _escape_md('✚金叉 ─死叉 ↑站上均線 ↓跌破均線 ⚠️超買/超賣')
+    lines += [sep, f'_{legend}_', '_由 FastAPI Stock Bot 自動產生_']
     return '\n'.join(lines)
 
 

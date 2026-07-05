@@ -136,7 +136,7 @@ def test_format_rich_block_rsi_overbought() -> None:
         volume_avg20=800_000,
     )
     msg = format_rich_stock_message([stock], 'TW', _NOW)
-    assert '超買' in msg
+    assert 'RSI 75' in msg and '⚠️' in msg
 
 
 def test_format_rich_block_rsi_oversold() -> None:
@@ -154,4 +154,4 @@ def test_format_rich_block_rsi_oversold() -> None:
         volume_avg20=800_000,
     )
     msg = format_rich_stock_message([stock], 'TW', _NOW)
-    assert '超賣' in msg
+    assert 'RSI 25' in msg and '⚠️' in msg

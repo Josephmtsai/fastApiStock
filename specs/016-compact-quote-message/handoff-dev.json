@@ -1,0 +1,26 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "016-compact-quote-message",
+  "status": "ready",
+  "summary": "新增 _build_indicator_summary helper 將 RSI/MACD/MA/BB/量能合併為單一符號摘要行，移除 _format_rich_block 的獨立 RSI 行、均線行與 bull/bear 理由行，並於 format_rich_stock_message 頁尾加入符號圖例行；介面與評分邏輯不變",
+  "changed_files": [
+    "src/fastapistock/services/telegram_service.py",
+    "tests/test_telegram_formatter.py",
+    "tests/test_telegram_send_rich.py"
+  ],
+  "ac_ref": "specs/016-compact-quote-message/tasks.md",
+  "test_summary": {
+    "pytest": "708 passed",
+    "coverage": "84%",
+    "ruff": "pass",
+    "mypy": "pass",
+    "pre_commit": "all hooks passed"
+  },
+  "notes": [
+    "T3 兩個必壞測試已依 tasks.md 改寫（RSI 75/RSI 25 + ⚠️）",
+    "T4 新增 TestIndicatorSummaryLine 共 25 個測試，涵蓋 AC-1.1~1.7、AC-2.1~2.4、AC-3.1、AC-4.1~4.2、AC-5.1~5.2、E1~E10",
+    "RSI 無 ⚠️ 的斷言直接測 _build_indicator_summary helper，因頁尾圖例行恆含 ⚠️ 字元",
+    "score_stock 仍照常呼叫產生 verdict/score，reasons 不再迭代但 ScoreResult 介面未變更"
+  ]
+}

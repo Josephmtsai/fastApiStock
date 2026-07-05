@@ -1,0 +1,20 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "016-compact-quote-message",
+  "status": "ready",
+  "summary": "將 _format_rich_block 的 RSI 行、均線行與 bull/bear 理由行合併為單一符號摘要行（RSI 72⚠️ │ MACD ✚ │ MA20↑ MA50↑ │ BB 高檔 │ 量 1.8x），並於頁尾加入符號圖例行；介面與評分邏輯不變",
+  "artifacts": [
+    "specs/016-compact-quote-message/spec.md",
+    "specs/016-compact-quote-message/tasks.md"
+  ],
+  "assumptions": [
+    "macd_hist 恰為 0 時 MACD 段省略（設計僅定義 >0 與 <0）",
+    "RSI 數值以 :.0f 顯示（如 RSI 72），⚠️ 閾值沿用現有顯示行的 >=70 / <=30",
+    "摘要行整行經 _escape_md 處理，段落分隔符使用 U+2502（│）、MACD 負值使用 U+2500（─），皆非 MarkdownV2 保留字元",
+    "摘要行插入位置為持倉區塊之後、近期區間行之前（即原 RSI 行位置）",
+    "score_stock 仍照常產生 reasons，developer 可選擇不迭代但不得變更 ScoreResult 介面",
+    "tests/test_telegram_send_rich.py 的 rsi_overbought / rsi_oversold 兩測試為已知必壞，改寫方式已載明於 tasks.md T3",
+    "頁尾符號圖例行（US-5）為 orchestrator 依使用者討論補充，每則訊息僅一行"
+  ]
+}

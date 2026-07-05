@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapistock.schemas.stock import RichStockData
 from fastapistock.services.telegram_service import (
+    _build_indicator_summary,
     _calc_cost_signal,
     _escape_md,
     format_rich_stock_message,
@@ -324,6 +325,247 @@ class TestPreMarketDisplay:
         assert '+20.00' in msg
         # pm_pct = 20 / 180 * 100 ≈ 11.11%
         assert r'\+11\.11' in msg
+
+
+def _summary_stock(**overrides: float | int | None) -> RichStockData:
+    """Build a RichStockData with field overrides for summary-line tests."""
+    return _make_stock().model_copy(update=dict(overrides))
+
+
+def _full_indicator_stock() -> RichStockData:
+    """Stock matching AC-1.1: all five summary segments present."""
+    return _summary_stock(
+        price=100.0,
+        rsi=72.0,
+        macd_hist=0.2,
+        ma20=95.0,
+        ma50=90.0,
+        bb_upper=101.0,
+        bb_lower=85.0,
+        volume=1_800_000,
+        volume_avg20=1_000_000,
+    )
+
+
+class TestIndicatorSummaryLine:
+    """Spec 016: single-line symbol summary replacing RSI/MA/reason lines."""
+
+    # -- AC-1.1: all segments present, order and format ----------------------
+    def test_full_summary_all_segments(self) -> None:
+        summary = _build_indicator_summary(_full_indicator_stock())
+        assert summary == 'RSI 72⚠️ │ MACD ✚ │ MA20↑ MA50↑ │ BB 高檔 │ 量 1.8x'
+
+    def test_full_summary_escaped_in_message(self) -> None:
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([_full_indicator_stock()], 'TW', now)
+        assert 'RSI 72⚠️ │ MACD ✚ │ MA20↑ MA50↑ │ BB 高檔 │ 量 1\\.8x' in msg
+
+    # -- AC-1.2 / AC-1.3 / E9: RSI warning threshold -------------------------
+    def test_rsi_55_no_warning(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(rsi=55.0))
+        assert summary is not None
+        assert 'RSI 55' in summary
+        assert '⚠️' not in summary
+
+    def test_rsi_70_has_warning(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(rsi=70.0))
+        assert summary is not None
+        assert 'RSI 70⚠️' in summary
+
+    def test_rsi_30_has_warning(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(rsi=30.0))
+        assert summary is not None
+        assert 'RSI 30⚠️' in summary
+
+    def test_rsi_none_segment_omitted(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(rsi=None))
+        assert summary is not None
+        assert 'RSI' not in summary
+
+    # -- AC-1.4 / E3: MACD symbol -------------------------------------------
+    def test_macd_hist_negative_uses_u2500(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(macd_hist=-0.3))
+        assert summary is not None
+        assert 'MACD ─' in summary
+
+    def test_macd_hist_zero_segment_omitted(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(macd_hist=0.0))
+        assert summary is not None
+        assert 'MACD' not in summary
+
+    def test_macd_hist_none_segment_omitted(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(macd_hist=None))
+        assert summary is not None
+        assert 'MACD' not in summary
+
+    # -- AC-1.5: MA arrows ----------------------------------------------------
+    def test_ma_arrows_up_and_down(self) -> None:
+        summary = _build_indicator_summary(
+            _summary_stock(price=92.0, ma20=95.0, ma50=90.0)
+        )
+        assert summary is not None
+        assert 'MA20↓ MA50↑' in summary
+
+    def test_ma50_none_only_ma20_shown(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(ma50=None))
+        assert summary is not None
+        assert 'MA20↑' in summary
+        assert 'MA50' not in summary
+
+    # -- AC-1.6 / E4 / E5: Bollinger position --------------------------------
+    def test_bb_high_zone(self) -> None:
+        summary = _build_indicator_summary(
+            _summary_stock(price=100.0, bb_upper=101.0, bb_lower=85.0)
+        )
+        assert summary is not None
+        assert 'BB 高檔' in summary
+
+    def test_bb_low_zone(self) -> None:
+        summary = _build_indicator_summary(
+            _summary_stock(price=86.0, bb_upper=105.0, bb_lower=85.0)
+        )
+        assert summary is not None
+        assert 'BB 低檔' in summary
+
+    def test_bb_middle_zone_omitted(self) -> None:
+        # bb_pos = (100 - 85) / (105 - 85) = 0.75 → segment omitted
+        summary = _build_indicator_summary(
+            _summary_stock(price=100.0, bb_upper=105.0, bb_lower=85.0)
+        )
+        assert summary is not None
+        assert 'BB' not in summary
+
+    def test_bb_zero_range_omitted_no_error(self) -> None:
+        summary = _build_indicator_summary(
+            _summary_stock(bb_upper=100.0, bb_lower=100.0)
+        )
+        assert summary is not None
+        assert 'BB' not in summary
+
+    # -- AC-1.7 / E6: volume ratio --------------------------------------------
+    def test_volume_ratio_format(self) -> None:
+        summary = _build_indicator_summary(
+            _summary_stock(volume=1_800_000, volume_avg20=1_000_000)
+        )
+        assert summary is not None
+        assert '量 1.8x' in summary
+
+    def test_volume_avg20_zero_omitted_no_error(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(volume_avg20=0))
+        assert summary is not None
+        assert '量' not in summary
+
+    def test_volume_zero_omitted(self) -> None:
+        summary = _build_indicator_summary(_summary_stock(volume=0))
+        assert summary is not None
+        assert '量' not in summary
+
+    # -- E1: all indicators missing → no summary line -------------------------
+    def test_all_indicators_missing_returns_none(self) -> None:
+        stock = _summary_stock(
+            rsi=None,
+            macd_hist=None,
+            ma20=None,
+            ma50=None,
+            bb_upper=None,
+            bb_lower=None,
+            volume=0,
+            volume_avg20=0,
+        )
+        assert _build_indicator_summary(stock) is None
+
+    def test_all_indicators_missing_message_has_no_separator(self) -> None:
+        stock = _summary_stock(
+            rsi=None,
+            macd_hist=None,
+            ma20=None,
+            ma50=None,
+            bb_upper=None,
+            bb_lower=None,
+            volume=0,
+            volume_avg20=0,
+        )
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '│' not in msg
+
+    # -- E2: partial segments, separator count = segments - 1 ------------------
+    def test_partial_segments_separator_count(self) -> None:
+        stock = _summary_stock(
+            rsi=55.0,
+            macd_hist=None,
+            ma20=95.0,
+            ma50=None,
+            bb_upper=None,
+            bb_lower=None,
+            volume=0,
+            volume_avg20=0,
+        )
+        summary = _build_indicator_summary(stock)
+        assert summary == 'RSI 55 │ MA20↑'
+        assert summary.count('│') == 1
+        assert not summary.startswith('│')
+        assert not summary.endswith('│')
+
+    # -- AC-4.1 / AC-4.2 / E8: MarkdownV2 safety ------------------------------
+    def test_summary_line_markdown_safe(self) -> None:
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([_full_indicator_stock()], 'TW', now)
+        summary_lines = [line for line in msg.split('\n') if '│' in line]
+        assert len(summary_lines) == 1
+        line = summary_lines[0]
+        assert '量 1\\.8x' in line
+        for forbidden in ('-', '+', '|'):
+            assert forbidden not in line
+
+    # -- AC-2.1 ~ AC-2.3: bloated blocks removed ------------------------------
+    def test_old_format_lines_removed(self) -> None:
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([_full_indicator_stock()], 'TW', now)
+        assert 'RSI\\(14\\)' not in msg
+        assert '均線:' not in msg
+        assert '✅' not in msg
+        assert '❌' not in msg
+
+    # -- AC-3.1 / E7 / E10: existing blocks preserved --------------------------
+    def test_portfolio_and_range_and_score_preserved(self) -> None:
+        stock = _full_indicator_stock().model_copy(
+            update={'avg_cost': 90.0, 'shares': 1000, 'unrealized_pnl': 10000.0}
+        )
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'TW', now)
+        assert '持倉' in msg
+        assert '近期區間' in msg
+        assert '評分' in msg
+        assert '│' in msg
+
+    def test_no_position_summary_still_present(self) -> None:
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([_full_indicator_stock()], 'TW', now)
+        assert '持倉' not in msg
+        assert '│' in msg
+
+    def test_premarket_and_summary_coexist(self) -> None:
+        stock = _full_indicator_stock().model_copy(
+            update={'market': 'US', 'premarket_price': 105.0}
+        )
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([stock], 'US', now)
+        assert '盤前' in msg
+        assert '│' in msg
+
+    # -- AC-5.1 / AC-5.2: footer legend ----------------------------------------
+    def test_footer_legend_present_once(self) -> None:
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message([_full_indicator_stock()], 'TW', now)
+        legend = '_✚金叉 ─死叉 ↑站上均線 ↓跌破均線 ⚠️超買/超賣_'
+        assert msg.count(legend) == 1
+
+    def test_footer_legend_once_for_multiple_stocks(self) -> None:
+        stocks = [_full_indicator_stock(), _full_indicator_stock()]
+        now = datetime(2026, 4, 9, 9, 0, tzinfo=_TZ)
+        msg = format_rich_stock_message(stocks, 'TW', now)
+        assert msg.count('✚金叉') == 1
 
 
 class TestCalcCostSignal:
