@@ -1,0 +1,22 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "017-chinese-news-digest",
+  "status": "ready",
+  "summary": "fetch_news 改抓 Google News RSS zh-TW（httpx + ElementTree，cache key v2，TW 用 twstock 中文名、US 用 '{symbol} 股票'）；pnl_service 持股列移除新聞行，尾端新增「今日焦點」digest（濾中性、每檔取 2、🟢/🔴）；news_service 增補中文情緒關鍵字",
+  "changed_files": [
+    "src/fastapistock/repositories/news_repo.py",
+    "src/fastapistock/services/news_service.py",
+    "src/fastapistock/services/pnl_service.py",
+    "pyproject.toml",
+    "tests/test_news_repo.py",
+    "tests/test_news_service.py",
+    "tests/test_pnl_service.py"
+  ],
+  "ac_ref": "specs/017-chinese-news-digest/tasks.md",
+  "notes": [
+    "Developer agent 於 T5 前因 session limit 中斷，orchestrator 接手完成驗證與提交",
+    "test_build_pnl_report_shows_news_in_digest_section 原斷言切割邏輯有誤（split '今日焦點' 殘留標頭 📰），orchestrator 修正為以完整標頭 '📰 *今日焦點*' 切割",
+    "驗證結果：pytest 739 passed、coverage 84%、ruff/mypy 通過"
+  ]
+}

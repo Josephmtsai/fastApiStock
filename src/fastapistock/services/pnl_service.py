@@ -157,7 +157,7 @@ def _build_stock_row(
         market: 'TW' or 'US' market identifier.
 
     Returns:
-        Multi-line MarkdownV2 string with price, change, P&L, and news.
+        Multi-line MarkdownV2 string with price, change, and P&L.
     """
     lines: list[str] = []
 
@@ -180,18 +180,60 @@ def _build_stock_row(
             pnl_str = _fmt_us_amount(stock.unrealized_pnl)
         lines.append(f'持倉損益 {_esc(pnl_str)}')
 
+    return '\n'.join(lines)
+
+
+def _collect_stock_news_lines(
+    stock: RichStockData,
+    market: Literal['TW', 'US'],
+) -> list[str]:
+    """Collect up to 2 non-neutral news digest lines for one held stock.
+
+    Args:
+        stock: RichStockData instance for the stock.
+        market: 'TW' or 'US' market identifier.
+
+    Returns:
+        MarkdownV2 lines like '🟢 2330 標題'; empty list when no signal
+        news is available or the fetch fails.
+    """
     try:
-        news_items = get_sentiment_news(stock.symbol, market)
-        if news_items:
-            for item in news_items:
-                lines.append(f'📰 {_esc(item.title)} \\[{_esc(item.sentiment)}\\]')
-        else:
-            lines.append('📰 暫無新聞')
+        news_items = get_sentiment_news(stock.symbol, market, max_items=5)
     except Exception as exc:
         logger.warning('News fetch failed for %s: %s', stock.symbol, exc)
-        lines.append('📰 暫無新聞')
+        return []
+    signals = [n for n in news_items if n.sentiment != '中性'][:2]
+    return [
+        f'{"🟢" if n.sentiment == "正面" else "🔴"} '
+        f'{_esc(stock.symbol)} {_esc(n.title)}'
+        for n in signals
+    ]
 
-    return '\n'.join(lines)
+
+def _build_news_digest_section(
+    tw_held: list[RichStockData],
+    us_held: list[RichStockData],
+) -> str:
+    """Build the trailing 今日焦點 news digest section.
+
+    Args:
+        tw_held: Held TW stocks in portfolio order.
+        us_held: Held US stocks in portfolio order.
+
+    Returns:
+        MarkdownV2 section with 🟢/🔴 headlines, or a '今日無重點新聞'
+        placeholder when no stock has signal news.
+    """
+    separator = '\\-' * 14
+    lines: list[str] = []
+    for stock in tw_held:
+        lines.extend(_collect_stock_news_lines(stock, 'TW'))
+    for stock in us_held:
+        lines.extend(_collect_stock_news_lines(stock, 'US'))
+    if not lines:
+        return f'{separator}\n📰 今日無重點新聞'
+    body = '\n'.join(lines)
+    return f'{separator}\n📰 *今日焦點*\n\n{body}'
 
 
 def _build_market_section(
@@ -329,6 +371,9 @@ def build_pnl_report(now: datetime) -> list[str]:
         sections.append(
             '\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n🇺🇸 美股明細\n\n資料讀取失敗'
         )
+
+    # --- News digest ---
+    sections.append(_build_news_digest_section(tw_held, us_held))
 
     full_text = '\n\n'.join(sections)
     return _split_message(full_text)

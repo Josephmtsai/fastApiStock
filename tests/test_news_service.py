@@ -30,6 +30,26 @@ def test_classify_sentiment(title: str, expected: str) -> None:
     assert classify_sentiment(title) == expected
 
 
+@pytest.mark.parametrize(
+    'title,expected',
+    [
+        ('法人看好下半年營運', '正面'),
+        ('台積電大漲創收盤新高', '正面'),
+        ('法說會釋利多', '正面'),
+        ('營收攀升 股價走高', '正面'),
+        ('外資調升目標價 展望優於預期', '正面'),
+        ('台股重挫三百點', '負面'),
+        ('利空消息衝擊 股價走低', '負面'),
+        ('權值股大跌 分析師看壞後市', '負面'),
+        ('遭客戶砍單 外資調降評等', '負面'),
+        ('財報不如預期', '負面'),
+    ],
+)
+def test_classify_sentiment_chinese_keywords(title: str, expected: str) -> None:
+    """D-6: newly added Chinese keywords are classified correctly."""
+    assert classify_sentiment(title) == expected
+
+
 def test_get_sentiment_news_returns_max_items() -> None:
     items = [
         NewsItem(title='Stock surged', url='http://a.com'),

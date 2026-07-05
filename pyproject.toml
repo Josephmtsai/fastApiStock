@@ -46,7 +46,9 @@ ignore = []
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]
 "src/fastapistock/scripts/**/*.py" = ["S311"]
-"src/fastapistock/repositories/news_repo.py" = ["S311"]
+# S314: RSS 來源為 Google News HTTPS 端點,ElementTree 預設不解析外部實體,
+# DTD 炸彈風險由上游端點信任邊界承擔
+"src/fastapistock/repositories/news_repo.py" = ["S311", "S314"]
 
 [tool.ruff.format]
 quote-style = "single"
