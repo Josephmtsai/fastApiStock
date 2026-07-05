@@ -1,0 +1,21 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "017-chinese-news-digest",
+  "status": "ready",
+  "summary": "每日損益報告新聞改用 Google News RSS zh-TW 中文源,並自持股列移出、集中至報告尾端「今日焦點」區(僅正面/負面新聞,每檔最多 2 條)",
+  "artifacts": [
+    "specs/017-chinese-news-digest/spec.md",
+    "specs/017-chinese-news-digest/tasks.md"
+  ],
+  "assumptions": [
+    "TW query 使用 twstock.codes 本地中文名映射(twstock>=1.3 已是宣告依賴,零網路呼叫);yfinance display_name 對台股常為英文名故不採用",
+    "US query 採 '{symbol} 股票'(ticker 在中文財經媒體普遍使用,較英文公司全名命中率高),因此 fetch_news 簽名維持 (symbol, market) 不變",
+    "stdlib xml.etree.ElementTree 足以解析 Google News RSS(結構單純的 rss/channel/item),無需第三方 XML 庫;Ruff S314 以 per-file-ignore 處理並註明信任邊界理由",
+    "cache key 加 v2 前綴以繞過部署後 4h TTL 內殘留的舊 yfinance 英文快取",
+    "NewsItem 以 default 欄位擴充(published/source),既有雙欄位建構呼叫全部向後相容",
+    "pnl_service 對 get_sentiment_news 的 import 路徑不變,既有 13 處測試 patch 目標繼續有效",
+    "「今日」語意由 date-scoped cache key 近似,不解析 pubDate 做時間過濾(YAGNI)",
+    "LLM 摘要/翻譯明列 out of scope"
+  ]
+}
