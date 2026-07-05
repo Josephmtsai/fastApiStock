@@ -350,6 +350,38 @@ def test_fetch_news_cache_key_is_v2_and_date_scoped(
     assert fake_cache.put.call_args[0][0] == expected_key
 
 
+def test_fetch_news_cdata_title_parsed_and_suffix_stripped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RSS titles wrapped in CDATA are parsed and suffix-cleaned normally."""
+    cdata_xml = (
+        '<rss version="2.0"><channel>'
+        '<item><title><![CDATA[台積電大漲 (Q3) - 經濟日報]]></title>'
+        '<link><![CDATA[https://news.google.com/rss/articles/cd]]></link>'
+        '<source url="https://money.udn.com">經濟日報</source></item>'
+        '</channel></rss>'
+    )
+    fake_cache = _make_cache_miss()
+    monkeypatch.setattr('fastapistock.repositories.news_repo._cache', fake_cache)
+
+    with (
+        patch(
+            'fastapistock.repositories.news_repo.httpx.get',
+            return_value=_make_response(cdata_xml),
+        ),
+        patch('time.sleep'),
+    ):
+        result = fetch_news('2330', 'TW')
+
+    assert result == [
+        NewsItem(
+            title='台積電大漲 (Q3)',
+            url='https://news.google.com/rss/articles/cd',
+            source='經濟日報',
+        )
+    ]
+
+
 def test_fetch_news_caps_items_at_five(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_cache = _make_cache_miss()
     monkeypatch.setattr('fastapistock.repositories.news_repo._cache', fake_cache)

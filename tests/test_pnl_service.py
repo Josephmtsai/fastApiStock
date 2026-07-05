@@ -721,3 +721,90 @@ def test_fmt_us_today_line_very_small_positive_rounds_to_zero() -> None:
     # us_today=0.001, rate=32.5 -> twd=round(0.0325)=0 -> '+0'
     result = _fmt_us_today_line(0.001, 32.5)
     assert '+0' in result
+
+
+# ── 017 QA additions: digest edge cases ─────────────────────────────────────
+
+
+def test_build_pnl_report_no_holdings_digest_shows_no_highlight() -> None:
+    """E-9: empty tw/us portfolios still render the digest placeholder."""
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service'),
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch(
+            'fastapistock.services.pnl_service.get_sentiment_news', return_value=[]
+        ) as mock_news,
+    ):
+        mock_pr.fetch_portfolio.return_value = {}
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '📰 今日無重點新聞' in full
+    mock_news.assert_not_called()
+
+
+def test_build_pnl_report_digest_escapes_emoji_title_reserved_chars() -> None:
+    """AC-2.5: emoji plus [ ] ! reserved chars in a title stay MarkdownV2-safe."""
+    tw_stock = _make_rich('2330', 'TW', shares=100)
+    news_item = SentimentNews(title='看好 🚀 [法說會] 續強!', sentiment='正面')
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch(
+            'fastapistock.services.pnl_service.get_sentiment_news',
+            return_value=[news_item],
+        ),
+    ):
+        mock_pr.fetch_portfolio.return_value = {'2330': _pe('2330')}
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
+        mock_ss.get_rich_tw_stock.return_value = tw_stock
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    full = '\n'.join(result)
+    assert '🟢 2330 看好 🚀 \\[法說會\\] 續強\\!' in full
+
+
+def test_build_pnl_report_long_digest_splits_within_limit() -> None:
+    """AC-2.6 / E-14: an oversized digest splits into segments <= 4096 chars."""
+    stocks = {
+        f'{2330 + i}': _make_rich(f'{2330 + i}', 'TW', shares=100) for i in range(40)
+    }
+    long_news = [
+        SentimentNews(title='看好' + '超長標題' * 30, sentiment='正面'),
+        SentimentNews(title='大漲' + '超長標題' * 30, sentiment='正面'),
+    ]
+
+    with (
+        patch('fastapistock.services.pnl_service.portfolio_repo') as mock_pr,
+        patch('fastapistock.services.pnl_service.stock_service') as mock_ss,
+        patch('fastapistock.services.pnl_service.us_stock_service') as mock_us,
+        patch(
+            'fastapistock.services.pnl_service.get_sentiment_news',
+            return_value=long_news,
+        ),
+    ):
+        mock_pr.fetch_portfolio.return_value = {s: _pe(s) for s in stocks}
+        mock_pr.fetch_portfolio_us.return_value = {}
+        mock_pr.fetch_pnl_us.return_value = None
+        mock_ss.get_rich_tw_stock.side_effect = lambda sym: stocks[sym]
+        mock_us.get_us_stocks.return_value = []
+
+        now = datetime(2026, 5, 22, 15, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+        result = build_pnl_report(now)
+
+    assert isinstance(result, list)
+    assert len(result) > 1
+    assert all(len(part) <= _MSG_LIMIT for part in result)
+    assert '今日焦點' in '\n'.join(result)
