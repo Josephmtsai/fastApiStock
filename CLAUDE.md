@@ -59,6 +59,9 @@ SA  ──handoff-sa.json──▶  Developer  ──spawn──▶  codex-revie
 2. **codex-reviewer 回報 FAIL 時，必須回到 Developer 修正，禁止直接 spawn QA。**
 3. SA 完成後才能啟動 Developer（`handoff-sa.json` 的 `status` 必須為 `ready`）。
 4. QA 完成後回報使用者，不自動 merge 或 deploy。
+5. **使用者 merge feature 到 main 後，orchestrator 將 `specs/<feature>/` 整個目錄移至
+   `specs/archived/<feature>/`（chore commit）。`specs/` 根目錄只保留進行中的 spec，
+   目錄位置即完成狀態，不另外維護 status 欄位。**
 
 ### Handoff JSON 格式
 
