@@ -1,0 +1,24 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "018-history-chart",
+  "status": "ready",
+  "summary": "實作 chart_service (matplotlib OO API/Agg 產 PNG)、telegram_service.send_photo (multipart)、history_handler g/r step 與兩種結果頁及 /history 文字捷徑的快速按鈕列;圖表以 sendPhoto 新訊息傳送,原文字結果不動,g step 全程不拋例外 webhook 恆 200",
+  "changed_files": [
+    "pyproject.toml",
+    "uv.lock",
+    "src/fastapistock/services/chart_service.py",
+    "src/fastapistock/services/telegram_service.py",
+    "src/fastapistock/services/history_handler.py",
+    "tests/test_chart_service.py",
+    "tests/test_telegram_send_photo.py",
+    "tests/test_history_webhook.py"
+  ],
+  "ac_ref": "specs/018-history-chart/tasks.md",
+  "notes": [
+    "test_period_summary_renders_results 的 'reply_markup' not in kwargs 斷言依 spec Affected Tests 改寫為驗證新按鈕列",
+    "chart_service 只用 Figure + FigureCanvasAgg (無 pyplot、無 matplotlib.use),print_png 因 upstream stub 缺口加一處 type: ignore[no-untyped-call]",
+    "查無資料的 edit 結果頁 (原 '查無資料' 文字) 依既有行為不附按鈕列,spec 未要求變更",
+    "全量驗證:ruff/mypy/pre-commit 零錯誤,pytest 771 passed,coverage 85%"
+  ]
+}

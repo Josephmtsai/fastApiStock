@@ -8,7 +8,7 @@ The Telegram webhook delegates here for both:
 
 State is kept entirely inside ``callback_data`` so the bot is stateless: each
 button records every selection made so far. The 64-byte Telegram limit is
-comfortable for our longest payload (``hist:p:symbol:TW:2330:monthly`` ≈ 28).
+comfortable for our longest payload (``hist:g:symbol:US:GOOGL:monthly`` = 30).
 
 Callback grammar
 ----------------
@@ -22,11 +22,15 @@ Callback grammar
     hist:s:<market>:<symbol>             # symbol-select on symbol path
     hist:p:summary:<market|ALL>:<period> # final → render summary
     hist:p:symbol:<market>:<symbol>:<p>  # final → render symbol series
+    hist:g:symbol:<market>:<symbol>:<p>  # send symbol chart (new message)
+    hist:g:summary:<market|ALL>:<period> # send summary chart (new message)
+    hist:r:menu                          # reset → first-layer type menu
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -37,7 +41,7 @@ from fastapistock.repositories.report_history_repo import (
     ReportSummary,
     SymbolSnapshot,
 )
-from fastapistock.services import telegram_service
+from fastapistock.services import chart_service, telegram_service
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +86,15 @@ def handle_text_command(*, chat_id: str, args: str) -> None:
         telegram_service.reply_to_chat(chat_id, '查無資料')
         return
     text = _format_symbol_text(symbol=rows[0].symbol, market=rows[0].market, rows=rows)
-    telegram_service.reply_to_chat(chat_id, text)
+    telegram_service.reply_to_chat(
+        chat_id,
+        text,
+        reply_markup=_result_keyboard_symbol(
+            market=rows[0].market,
+            symbol=rows[0].symbol,
+            period='monthly',
+        ),
+    )
 
 
 def _parse_text_args(args: str) -> tuple[_MarketLiteral | None, str | None]:
@@ -183,6 +195,10 @@ def handle_callback(
         _step_select_period_for_symbol(chat_id, message_id, parts)
     elif step == 'p':
         _step_render_result(chat_id, message_id, parts)
+    elif step == 'g':
+        _step_send_chart(chat_id, parts)
+    elif step == 'r':
+        _step_reset(chat_id, message_id)
     else:
         logger.warning('history_callback.unknown_step data=%r', data)
 
@@ -376,6 +392,10 @@ def _render_summary(
         chat_id=chat_id,
         message_id=message_id,
         text=text,
+        reply_markup=_result_keyboard_summary(
+            market_choice=market_choice,
+            period=report_type,
+        ),
     )
 
 
@@ -411,6 +431,140 @@ def _render_symbol(
         chat_id=chat_id,
         message_id=message_id,
         text=text,
+        reply_markup=_result_keyboard_symbol(
+            market=market,
+            symbol=symbol,
+            period=report_type,
+        ),
+    )
+
+
+# ── Chart step (spec-018) ──────────────────────────────────────────────────
+
+
+def _step_send_chart(chat_id: int, parts: list[str]) -> None:
+    """Send the requested chart as a *new* photo message (``g`` step).
+
+    Validates the callback payload against the same whitelists as the ``p``
+    step; invalid payloads are logged and dropped (spec-018 E9/E10). Never
+    raises so the webhook always returns HTTP 200.
+    """
+    if len(parts) < 5:
+        logger.warning('history_callback.chart_malformed parts=%r', parts)
+        return
+    flow = parts[2]
+    if flow == 'summary':
+        market_choice, period = parts[3], parts[4]
+        if market_choice not in {'TW', 'US', 'ALL'} or period not in {
+            'weekly',
+            'monthly',
+        }:
+            logger.warning('history_callback.chart_invalid parts=%r', parts)
+            return
+        _send_summary_chart(
+            chat_id,
+            market_choice=market_choice,
+            period=period,  # type: ignore[arg-type]
+        )
+    elif flow == 'symbol':
+        if len(parts) < 6:
+            logger.warning('history_callback.chart_malformed parts=%r', parts)
+            return
+        market, symbol, period = parts[3], parts[4], parts[5]
+        if market not in {'TW', 'US'} or period not in {'weekly', 'monthly'}:
+            logger.warning('history_callback.chart_invalid parts=%r', parts)
+            return
+        _send_symbol_chart(
+            chat_id,
+            market=market,  # type: ignore[arg-type]
+            symbol=symbol,
+            period=period,  # type: ignore[arg-type]
+        )
+    else:
+        logger.warning('history_callback.chart_unknown_flow parts=%r', parts)
+
+
+def _send_symbol_chart(
+    chat_id: int,
+    *,
+    market: _MarketLiteral,
+    symbol: str,
+    period: _PeriodLiteral,
+) -> None:
+    """Query the per-symbol series and send it as a chart photo."""
+    rows = report_history_repo.list_symbol_history(
+        symbol=symbol,
+        market=market,
+        report_type=period,
+        limit=_DEFAULT_RECORDS_LIMIT,
+    )
+    if not rows:
+        telegram_service.reply_to_chat(str(chat_id), '查無資料，無法產生圖表')
+        return
+    period_label = '週報' if period == 'weekly' else '月報'
+    _render_and_send_chart(
+        chat_id,
+        lambda: chart_service.render_symbol_chart(rows),
+        caption=f'📈 {symbol} ({market}) {period_label}',
+    )
+
+
+def _send_summary_chart(
+    chat_id: int,
+    *,
+    market_choice: str,
+    period: _PeriodLiteral,
+) -> None:
+    """Query the account summary series and send it as a chart photo."""
+    market: _MarketLiteral | None = None
+    if market_choice == 'TW':
+        market = 'TW'
+    elif market_choice == 'US':
+        market = 'US'
+    rows = report_history_repo.list_summary_history(
+        report_type=period,
+        market=market,
+        limit=_DEFAULT_RECORDS_LIMIT,
+    )
+    if not rows:
+        telegram_service.reply_to_chat(str(chat_id), '查無資料，無法產生圖表')
+        return
+    period_label = '週報' if period == 'weekly' else '月報'
+    scope = '帳戶總覽 (TW + US)' if market is None else f'{market_choice} 帳戶'
+    _render_and_send_chart(
+        chat_id,
+        lambda: chart_service.render_summary_chart(rows, market=market_choice),
+        caption=f'📊 {scope} {period_label}',
+    )
+
+
+def _render_and_send_chart(
+    chat_id: int,
+    render: Callable[[], bytes],
+    *,
+    caption: str,
+) -> None:
+    """Run ``render`` and sendPhoto, degrading to a text reply on failure."""
+    try:
+        png = render()
+    except Exception:
+        # matplotlib can raise many exception types during layout/drawing;
+        # they are all collapsed at this boundary into a text fallback so
+        # the webhook still returns HTTP 200 (spec-018 E7).
+        logger.exception('history_chart.render_failed chat_id=%s', chat_id)
+        telegram_service.reply_to_chat(str(chat_id), '圖表產生失敗，請稍後再試')
+        return
+    if not telegram_service.send_photo(chat_id, png, caption=caption):
+        telegram_service.reply_to_chat(str(chat_id), '圖表傳送失敗，請稍後再試')
+
+
+def _step_reset(chat_id: int, message_id: int) -> None:
+    """Reset the flow: edit the message back to the first-layer type menu."""
+    telegram_service.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        text='請選擇查詢類型：',
+        reply_markup=_type_menu_keyboard(),
     )
 
 
@@ -503,9 +657,9 @@ def _build_inline_keyboard(
     }
 
 
-def _send_type_menu(chat_id: str) -> None:
-    """First-step menu: type selection (summary vs. symbol)."""
-    keyboard = _build_inline_keyboard(
+def _type_menu_keyboard() -> dict[str, object]:
+    """First-layer type-menu keyboard (shared by ``/history`` and reset)."""
+    return _build_inline_keyboard(
         [
             [
                 ('帳戶總覽', 'hist:t:summary'),
@@ -513,10 +667,53 @@ def _send_type_menu(chat_id: str) -> None:
             ]
         ]
     )
+
+
+def _result_keyboard_symbol(
+    *,
+    market: str,
+    symbol: str,
+    period: _PeriodLiteral,
+) -> dict[str, object]:
+    """Quick-action keyboard under a per-symbol result page (spec-018)."""
+    opposite: _PeriodLiteral = 'weekly' if period == 'monthly' else 'monthly'
+    toggle_label = '📅 切換週報' if period == 'monthly' else '📅 切換月報'
+    return _build_inline_keyboard(
+        [
+            [
+                ('📈 圖表', f'hist:g:symbol:{market}:{symbol}:{period}'),
+                (toggle_label, f'hist:p:symbol:{market}:{symbol}:{opposite}'),
+            ],
+            [('🔄 重新選擇', 'hist:r:menu')],
+        ]
+    )
+
+
+def _result_keyboard_summary(
+    *,
+    market_choice: str,
+    period: _PeriodLiteral,
+) -> dict[str, object]:
+    """Quick-action keyboard under a summary result page (spec-018)."""
+    opposite: _PeriodLiteral = 'weekly' if period == 'monthly' else 'monthly'
+    toggle_label = '📅 切換週報' if period == 'monthly' else '📅 切換月報'
+    return _build_inline_keyboard(
+        [
+            [
+                ('📈 圖表', f'hist:g:summary:{market_choice}:{period}'),
+                (toggle_label, f'hist:p:summary:{market_choice}:{opposite}'),
+            ],
+            [('🔄 重新選擇', 'hist:r:menu')],
+        ]
+    )
+
+
+def _send_type_menu(chat_id: str) -> None:
+    """First-step menu: type selection (summary vs. symbol)."""
     telegram_service.reply_to_chat(
         chat_id,
         '請選擇查詢類型：',
-        reply_markup=keyboard,
+        reply_markup=_type_menu_keyboard(),
     )
 
 
