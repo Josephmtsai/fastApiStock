@@ -1,0 +1,20 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "018-history-chart",
+  "status": "ready",
+  "summary": "為 /history 兩種結果頁加入圖表/週月切換/重新選擇按鈕列,新增 chart_service (matplotlib Agg OO API 產 PNG) 與 telegram_service.send_photo,圖表以新訊息傳送且既有選單流程與文字捷徑行為不變",
+  "artifacts": [
+    "specs/018-history-chart/spec.md",
+    "specs/018-history-chart/tasks.md"
+  ],
+  "assumptions": [
+    "採 matplotlib OO API (Figure + FigureCanvasAgg) 而非 pyplot,因 matplotlib.use('Agg') 後的 module-level pyplot import 會觸發 Ruff E402;OO API 即 Agg backend,符合已核准方向",
+    "render_summary_chart 增加 keyword-only 參數 market='ALL',使單一市場總覽的圖表只畫該市場一條線,與文字結果投影行為一致;ALL 時為雙 y 軸",
+    "重新選擇 callback 定為 hist:r:menu (3 段),因 handle_callback 既有 len(parts)<3 guard 會擋掉 2 段的 hist:r,不放寬 guard",
+    "文字捷徑 /history <symbol> 的成功回覆一致附上按鈕列 (period 固定 monthly, market 取 rows[0].market),不自動附圖",
+    "g step 的錯誤回饋使用 reply_to_chat 文字訊息,因 handle_callback 已在入口 answer_callback_query,同一 callback 無法二次有效 answer",
+    "Dockerfile 不修改:matplotlib wheel 自帶 DejaVu 字型,ASCII 標籤無需中文字型層",
+    "tests/test_history_webhook.py::test_period_summary_renders_results 的 'reply_markup' not in kwargs 斷言為預期破壞,需改寫為驗證新按鈕列"
+  ]
+}

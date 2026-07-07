@@ -52,6 +52,26 @@ _PATCH_TG_EDIT = (
 _PATCH_TG_ANSWER = (
     'fastapistock.services.history_handler.telegram_service.answer_callback_query'
 )
+_PATCH_TG_SEND_PHOTO = (
+    'fastapistock.services.history_handler.telegram_service.send_photo'
+)
+_PATCH_CHART_SYMBOL = (
+    'fastapistock.services.history_handler.chart_service.render_symbol_chart'
+)
+_PATCH_CHART_SUMMARY = (
+    'fastapistock.services.history_handler.chart_service.render_summary_chart'
+)
+
+_PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
+
+
+def _button_data(markup: dict[str, object]) -> list[str]:
+    """Flatten an inline keyboard into its callback_data strings."""
+    return [
+        btn['callback_data']
+        for row in markup['inline_keyboard']  # type: ignore[union-attr]
+        for btn in row
+    ]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -187,11 +207,17 @@ class TestHistoryTextCommand:
         assert mock_list.call_args_list[0].kwargs['symbol'] == '2330'
         # Single TW call sufficed → no second call (had data on first try).
         assert mock_list.call_count == 1
-        # Reply rendered the per-symbol table without inline keyboard.
+        # Reply rendered the per-symbol table with the quick-action keyboard.
         mock_reply.assert_called_once()
         text = mock_reply.call_args.args[1]
         assert '2330' in text
         assert '2025-05' in text
+        # AC-5.1: text shortcut carries the same result-page buttons.
+        markup = mock_reply.call_args.kwargs['reply_markup']
+        button_data = _button_data(markup)
+        assert 'hist:g:symbol:TW:2330:monthly' in button_data
+        assert 'hist:p:symbol:TW:2330:weekly' in button_data
+        assert 'hist:r:menu' in button_data
 
     def test_us_prefix_calls_repo_with_us(self, authed: None) -> None:
         rows = [_snapshot(period='2025-05', symbol='AAPL', market='US')]
@@ -207,6 +233,11 @@ class TestHistoryTextCommand:
         assert call.kwargs['symbol'] == 'AAPL'
         text = mock_reply.call_args.args[1]
         assert 'AAPL' in text
+        # AC-5.1: quick-action keyboard attached with US market payloads.
+        markup = mock_reply.call_args.kwargs['reply_markup']
+        button_data = _button_data(markup)
+        assert 'hist:g:symbol:US:AAPL:monthly' in button_data
+        assert all(len(data) < 64 for data in button_data)
 
     def test_symbol_with_no_history_reports_empty(self, authed: None) -> None:
         with (
@@ -276,8 +307,12 @@ class TestCallbackQueryFlow:
         kwargs = mock_edit.call_args.kwargs
         assert '帳戶' in kwargs['text']
         assert '2026-02' in kwargs['text']
-        # Final result must clear the inline keyboard.
-        assert 'reply_markup' not in kwargs
+        # spec-018: result page now carries the quick-action keyboard.
+        button_data = _button_data(kwargs['reply_markup'])
+        assert 'hist:g:summary:TW:monthly' in button_data
+        assert 'hist:p:summary:TW:weekly' in button_data
+        assert 'hist:r:menu' in button_data
+        assert all(len(data) < 64 for data in button_data)
 
     def test_type_symbol_renders_market_menu(self, authed: None) -> None:
         with (
@@ -330,9 +365,189 @@ class TestCallbackQueryFlow:
         assert call.kwargs['symbol'] == '2330'
         assert call.kwargs['market'] == 'TW'
         assert call.kwargs['report_type'] == 'monthly'
-        text = mock_edit.call_args.kwargs['text']
-        assert '2330' in text
-        assert '2026-02' in text
+        kwargs = mock_edit.call_args.kwargs
+        assert '2330' in kwargs['text']
+        assert '2026-02' in kwargs['text']
+        # spec-018: result page now carries the quick-action keyboard.
+        button_data = _button_data(kwargs['reply_markup'])
+        assert 'hist:g:symbol:TW:2330:monthly' in button_data
+        assert 'hist:p:symbol:TW:2330:weekly' in button_data
+        assert 'hist:r:menu' in button_data
+        assert all(len(data) < 64 for data in button_data)
+
+    def test_period_toggle_rerenders_with_weekly_buttons(self, authed: None) -> None:
+        # AC-3.1: toggling to weekly re-renders and flips the button payloads.
+        rows = [_snapshot(period='2026-06-19'), _snapshot(period='2026-06-26')]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SYMBOL, return_value=rows) as mock_list,
+            patch(_PATCH_TG_EDIT, return_value=True) as mock_edit,
+        ):
+            resp = _post(_callback_update('hist:p:symbol:TW:2330:weekly'))
+        assert resp.status_code == 200
+        assert mock_list.call_args.kwargs['report_type'] == 'weekly'
+        markup = mock_edit.call_args.kwargs['reply_markup']
+        button_data = _button_data(markup)
+        assert 'hist:g:symbol:TW:2330:weekly' in button_data
+        assert 'hist:p:symbol:TW:2330:monthly' in button_data
+        labels = [btn['text'] for row in markup['inline_keyboard'] for btn in row]
+        assert any('切換月報' in label for label in labels)
+
+
+# ── Chart (g step) & reset (r step) callbacks — spec-018 ──────────────────
+
+
+class TestChartCallback:
+    """``hist:g:*`` sends the chart as a NEW photo message."""
+
+    def test_symbol_chart_sends_png_photo(self, authed: None) -> None:
+        # AC-1.1: sendPhoto fires with PNG bytes; the text message is untouched.
+        rows = [_snapshot(period='2026-02'), _snapshot(period='2026-03')]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SYMBOL, return_value=rows) as mock_list,
+            patch(_PATCH_TG_SEND_PHOTO, return_value=True) as mock_photo,
+            patch(_PATCH_TG_EDIT, return_value=True) as mock_edit,
+            patch(_PATCH_TG_REPLY, return_value=True) as mock_reply,
+        ):
+            resp = _post(_callback_update('hist:g:symbol:TW:2330:monthly'))
+        assert resp.status_code == 200
+        assert mock_list.call_args.kwargs['symbol'] == '2330'
+        assert mock_list.call_args.kwargs['report_type'] == 'monthly'
+        mock_photo.assert_called_once()
+        photo = mock_photo.call_args.args[1]
+        assert photo.startswith(_PNG_MAGIC)
+        caption = mock_photo.call_args.kwargs['caption']
+        assert '2330' in caption
+        assert 'TW' in caption
+        mock_edit.assert_not_called()
+        mock_reply.assert_not_called()
+
+    def test_summary_chart_all_sends_png_photo(self, authed: None) -> None:
+        # AC-2.1: ALL market chart is rendered and sent as a new photo.
+        rows = [_summary(period='2026-02'), _summary(period='2026-03')]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SUMMARY, return_value=rows) as mock_list,
+            patch(_PATCH_TG_SEND_PHOTO, return_value=True) as mock_photo,
+            patch(_PATCH_TG_EDIT, return_value=True) as mock_edit,
+        ):
+            resp = _post(_callback_update('hist:g:summary:ALL:monthly'))
+        assert resp.status_code == 200
+        assert mock_list.call_args.kwargs['market'] is None
+        photo = mock_photo.call_args.args[1]
+        assert photo.startswith(_PNG_MAGIC)
+        mock_edit.assert_not_called()
+
+    def test_summary_chart_single_market_projection(self, authed: None) -> None:
+        # AC-2.2: single-market choice is forwarded to the renderer.
+        rows = [_summary(period='2026-03')]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SUMMARY, return_value=rows),
+            patch(_PATCH_CHART_SUMMARY, return_value=_PNG_MAGIC) as mock_render,
+            patch(_PATCH_TG_SEND_PHOTO, return_value=True) as mock_photo,
+        ):
+            resp = _post(_callback_update('hist:g:summary:TW:monthly'))
+        assert resp.status_code == 200
+        assert mock_render.call_args.kwargs['market'] == 'TW'
+        mock_photo.assert_called_once()
+
+    def test_empty_rows_replies_no_data_text(self, authed: None) -> None:
+        # AC-1.2 / E1: no data → text fallback, no photo.
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SYMBOL, return_value=[]),
+            patch(_PATCH_TG_SEND_PHOTO, return_value=True) as mock_photo,
+            patch(_PATCH_TG_REPLY, return_value=True) as mock_reply,
+        ):
+            resp = _post(_callback_update('hist:g:symbol:TW:9999:monthly'))
+        assert resp.status_code == 200
+        mock_photo.assert_not_called()
+        assert '查無資料' in mock_reply.call_args.args[1]
+        assert '無法產生圖表' in mock_reply.call_args.args[1]
+
+    def test_render_error_replies_failure_text(self, authed: None) -> None:
+        # E7: renderer exceptions degrade to a text reply; webhook stays 200.
+        rows = [_snapshot(period='2026-03')]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SYMBOL, return_value=rows),
+            patch(_PATCH_CHART_SYMBOL, side_effect=RuntimeError('boom')),
+            patch(_PATCH_TG_SEND_PHOTO, return_value=True) as mock_photo,
+            patch(_PATCH_TG_REPLY, return_value=True) as mock_reply,
+        ):
+            resp = _post(_callback_update('hist:g:symbol:TW:2330:monthly'))
+        assert resp.status_code == 200
+        mock_photo.assert_not_called()
+        assert '圖表產生失敗' in mock_reply.call_args.args[1]
+
+    def test_send_photo_failure_replies_failure_text(self, authed: None) -> None:
+        # E6: sendPhoto returning False degrades to a text reply.
+        rows = [_snapshot(period='2026-03')]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SYMBOL, return_value=rows),
+            patch(_PATCH_TG_SEND_PHOTO, return_value=False),
+            patch(_PATCH_TG_REPLY, return_value=True) as mock_reply,
+        ):
+            resp = _post(_callback_update('hist:g:symbol:TW:2330:monthly'))
+        assert resp.status_code == 200
+        assert '圖表傳送失敗' in mock_reply.call_args.args[1]
+
+    def test_invalid_market_silently_dropped(self, authed: None) -> None:
+        # E9: whitelist failure → log + silent return, nothing sent.
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SYMBOL) as mock_list,
+            patch(_PATCH_TG_SEND_PHOTO) as mock_photo,
+            patch(_PATCH_TG_REPLY) as mock_reply,
+        ):
+            resp = _post(_callback_update('hist:g:symbol:XX:2330:monthly'))
+        assert resp.status_code == 200
+        mock_list.assert_not_called()
+        mock_photo.assert_not_called()
+        mock_reply.assert_not_called()
+
+    def test_invalid_period_silently_dropped(self, authed: None) -> None:
+        # E9: bad period on the summary flow is also dropped.
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SUMMARY) as mock_list,
+            patch(_PATCH_TG_SEND_PHOTO) as mock_photo,
+        ):
+            resp = _post(_callback_update('hist:g:summary:ALL:daily'))
+        assert resp.status_code == 200
+        mock_list.assert_not_called()
+        mock_photo.assert_not_called()
+
+
+class TestResetCallback:
+    """``hist:r:menu`` edits the message back to the first-layer type menu."""
+
+    def test_reset_edits_to_type_menu(self, authed: None) -> None:
+        # AC-4.1: same keyboard as the /history entry menu.
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_TG_EDIT, return_value=True) as mock_edit,
+        ):
+            resp = _post(_callback_update('hist:r:menu'))
+        assert resp.status_code == 200
+        kwargs = mock_edit.call_args.kwargs
+        assert '請選擇查詢類型' in kwargs['text']
+        button_data = _button_data(kwargs['reply_markup'])
+        assert 'hist:t:summary' in button_data
+        assert 'hist:t:symbol' in button_data
+
+    def test_reset_two_segments_guarded(self, authed: None) -> None:
+        # E10: 2-segment 'hist:r' is stopped by the existing len guard.
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_TG_EDIT) as mock_edit,
+        ):
+            resp = _post(_callback_update('hist:r'))
+        assert resp.status_code == 200
+        mock_edit.assert_not_called()
 
 
 # ── Authorization & malformed payloads ─────────────────────────────────────

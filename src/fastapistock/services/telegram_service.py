@@ -574,6 +574,54 @@ def edit_message_text(
         return False
 
 
+def send_photo(
+    chat_id: int | str,
+    photo: bytes,
+    caption: str | None = None,
+) -> bool:
+    """Send a PNG photo to a Telegram chat via multipart upload.
+
+    Used by the ``/history`` chart flow (spec-018). Falls back silently on
+    error so the webhook caller can still return HTTP 200.
+
+    Args:
+        chat_id: Target Telegram chat ID.
+        photo: Raw PNG image bytes to upload.
+        caption: Optional caption; omitted from the payload when ``None``.
+
+    Returns:
+        ``True`` on a 2xx response from Telegram, ``False`` otherwise.
+    """
+    if not TELEGRAM_TOKEN:
+        logger.error('TELEGRAM_TOKEN is not configured')
+        return False
+
+    url = f'{_TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/sendPhoto'
+    data: dict[str, object] = {'chat_id': chat_id}
+    if caption is not None:
+        data['caption'] = caption
+    files = {'photo': ('chart.png', photo, 'image/png')}
+
+    try:
+        response = httpx.post(url, data=data, files=files, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        logger.info('Telegram photo sent to chat_id=%s', chat_id)
+        return True
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            'Telegram sendPhoto error for chat_id=%s: %s %s',
+            chat_id,
+            exc.response.status_code,
+            exc.response.text,
+        )
+        return False
+    except httpx.RequestError as exc:
+        logger.error(
+            'Telegram sendPhoto request failed for chat_id=%s: %s', chat_id, exc
+        )
+        return False
+
+
 def answer_callback_query(callback_query_id: str, text: str = '') -> bool:
     """Acknowledge a Telegram callback query (clears the loading spinner).
 
