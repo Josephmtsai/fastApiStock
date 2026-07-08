@@ -44,14 +44,21 @@
 - **Pre-commit**: 本地必須啟用 `pre-commit`。`git commit` 前必須通過所有 Hooks (Ruff, Mypy, Secrets)。
   - 指令: `uv run pre-commit run --all-files`
 
-## 7. Agent Workflow & Handoff Protocol
+## 6. Agent Workflow & Handoff Protocol
 
 ### 流程
 
 ```
-SA  ──handoff-sa.json──▶  Developer  ──spawn──▶  codex-reviewer  ──PASS──▶  QA
-                                                                  ──FAIL──▶  Developer (修正)
+使用者 ⇄ Orchestrator（brainstorming／需求釐清，取得設計核准）
+              │
+              ▼
+SA  ──handoff-sa.json──▶  Developer  ──▶  codex-reviewer  ──PASS──▶  QA
+                                          ──FAIL──▶  Developer (修正)
 ```
+
+- **需求釐清由 orchestrator 在主對話進行**（subagent 無法與使用者互動）。
+  設計取得使用者核准後，orchestrator 才 spawn SA，並在 prompt 中附上已核准的設計。
+- 所有 agent 完成後回報 orchestrator，由 orchestrator 負責 spawn 下一棒。
 
 ### 強制規則（Orchestrator 必須遵守）
 
@@ -62,6 +69,13 @@ SA  ──handoff-sa.json──▶  Developer  ──spawn──▶  codex-revie
 5. **使用者 merge feature 到 main 後，orchestrator 將 `specs/<feature>/` 整個目錄移至
    `specs/archived/<feature>/`（chore commit）。`specs/` 根目錄只保留進行中的 spec，
    目錄位置即完成狀態，不另外維護 status 欄位。**
+6. **merge 後不自動 push。push main 會觸發 Railway 部署，必須由使用者明示才執行。**
+7. **Agent 中斷恢復**：agent 因 session limit 等原因中斷時，orchestrator 先以
+   `git status` / `git log` 盤點工作區實際進度，接手完成剩餘步驟或重派 agent，
+   並在 handoff notes 記錄中斷與接手經過。
+8. **QA 補測 commit 落地**：QA 在隔離 worktree 中補的測試 commit 若無法直接落在
+   feature branch（分支被主工作區 checkout 時），由 orchestrator 以
+   fast-forward / cherry-pick 接回 feature branch，接回後在主工作區重跑該測試確認。
 
 ### Handoff JSON 格式
 
@@ -102,14 +116,19 @@ Developer 完成時額外加入：
 
 ### 每個 Agent 的完成義務
 
-- **SA**：產出 `handoff-sa.json`，artifacts 必須列出所有 spec 文件路徑
+- **SA**：將 spec.md / tasks.md / handoff-sa.json 寫入 `specs/<feature>/`（SA 有 Write 權限，
+  僅限 `specs/` 目錄），artifacts 必須列出所有 spec 文件路徑；spec 必含
+  **Affected Tests 盤點**（既有測試哪些會壞、如何改寫）
 - **Developer**：產出 `handoff-dev.json`，changed_files 必須完整列出，告知 orchestrator 可以 spawn **codex-reviewer**（不是直接 spawn QA）
-- **codex-reviewer**：產出 review report，回報 PASS/FAIL verdict，PASS 才告知 orchestrator 可以 spawn QA
-- **QA**：不產出 handoff，直接以測試報告回報 orchestrator
+- **codex-reviewer**：產出 review report，回報 PASS/FAIL verdict，PASS 才告知 orchestrator 可以 spawn QA。
+  Codex MCP 工具不可用時，改以手動深度 review（讀完整 diff、實跑 ruff/mypy/pytest、
+  逐條核對 spec AC）執行，並在報告中註明 fallback
+- **QA**：不產出 handoff，直接以測試報告回報 orchestrator；可補測試（`test:` commit，
+  不得改業務邏輯），無法落在 feature branch 時依規則 8 由 orchestrator 接回
 
 ---
 
-## 6. 知識圖譜 (Knowledge Graph)
+## 7. 知識圖譜 (Knowledge Graph)
 專案已建立 graphify 知識圖譜，位於 `graphify-out/graph.json`（786 nodes、1552 edges、30 communities）。
 
 **核心節點（異動前請特別留意）**：`get()`、`RichStockData`、`StockNotFoundError`、`ResponseEnvelope`、`PortfolioEntry`。
