@@ -5,7 +5,7 @@ description: |
   Triggers: "review before QA", "codex review", "review changed files", "pre-QA review".
   Called by developer agent after completing a feature — must pass before spawning QA.
 tools: Read, Glob, Grep, Bash, mcp__codex__codex, mcp__codex__codex-reply
-model: sonnet
+model: opus
 color: purple
 ---
 
