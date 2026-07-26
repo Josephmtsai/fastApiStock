@@ -22,6 +22,7 @@ tools:
   - TaskCreate
   - TaskUpdate
   - TaskList
+model: sonnet
 ---
 
 # Role: CI/CD Engineer

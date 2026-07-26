@@ -19,6 +19,7 @@ tools:
   - Bash
   - TaskUpdate
   - TaskList
+model: sonnet
 ---
 
 # Role: QA Engineer
