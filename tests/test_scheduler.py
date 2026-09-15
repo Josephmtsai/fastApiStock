@@ -136,6 +136,18 @@ _US_WINDOW_NAIVE: list[tuple[datetime, bool, str]] = [
     (datetime(2026, 7, 6, 21, 30), True, 'N1 naive -> Mon 09:30 EDT open'),
 ]
 
+_UTC_TZ = ZoneInfo('UTC')
+
+_US_WINDOW_NON_TAIPEI_AWARE: list[tuple[datetime, bool, str]] = [
+    # QA-added (spec 019): non-Asia/Taipei tz-aware input must still be
+    # converted correctly via astimezone(), per docstring's "any other
+    # tz-aware datetime is converted correctly" contract.
+    (datetime(2026, 7, 6, 13, 30, tzinfo=_UTC_TZ), True, 'UTC1 Mon 09:30 EDT open'),
+    (datetime(2026, 7, 6, 13, 29, tzinfo=_UTC_TZ), False, 'UTC2 Mon 09:29 EDT'),
+    (datetime(2026, 1, 12, 14, 30, tzinfo=_UTC_TZ), True, 'UTC3 Mon 09:30 EST open'),
+    (datetime(2026, 1, 12, 14, 29, tzinfo=_UTC_TZ), False, 'UTC4 Mon 09:29 EST'),
+]
+
 
 class TestUsMarketWindow:
     """Truth table for is_us_market_window (spec 019 G1, ET-based, DST-aware).
@@ -158,6 +170,12 @@ class TestUsMarketWindow:
 
     @pytest.mark.parametrize(('now', 'expected', 'reason'), _US_WINDOW_NAIVE)
     def test_naive_datetime_treated_as_taipei(
+        self, now: datetime, expected: bool, reason: str
+    ) -> None:
+        assert is_us_market_window(now) is expected, reason
+
+    @pytest.mark.parametrize(('now', 'expected', 'reason'), _US_WINDOW_NON_TAIPEI_AWARE)
+    def test_non_taipei_aware_datetime_converted_correctly(
         self, now: datetime, expected: bool, reason: str
     ) -> None:
         assert is_us_market_window(now) is expected, reason
