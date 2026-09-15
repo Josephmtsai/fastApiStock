@@ -7,7 +7,8 @@ Covers scenarios beyond the developer suite:
 * Weekly/monthly toggle roundtrip — keyboard and content stay consistent.
 * ``hist:r:menu`` reset followed by a complete re-selection flow.
 * Extreme values (negative PnL, huge totals, huge pnl_pct) still render.
-* Summary chart axis labels carry the correct currency per market.
+* Summary chart axis labels carry the correct currency per market; ALL
+  renders two stacked sharex subplots (spec-019).
 * ``sendPhoto`` caption is plain text (no ``parse_mode``) so Markdown
   metacharacters cannot break delivery.
 * ``g`` step segment-count guards (E10 analogue for the chart step).
@@ -16,6 +17,7 @@ Covers scenarios beyond the developer suite:
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -186,6 +188,34 @@ class TestRepeatedChartClicks:
         pngs = [call.args[1] for call in mock_photo.call_args_list]
         assert all(png == pngs[0] for png in pngs)
 
+    def test_five_all_summary_chart_clicks_render_identically(
+        self, authed: None
+    ) -> None:
+        # codex-reviewer follow-up: mirror the symbol-chart byte-identical
+        # check (AC-6.3) for the stacked-subplot 'ALL' summary layout
+        # (spec-019 T4), not just "renders without raising".
+        rows = [
+            _summary(period='2026-02', tw='500000', us='8000'),
+            _summary(period='2026-03', tw='-120000', us='-450'),
+            _summary(period='2026-04', tw='610000', us='9999'),
+        ]
+        with (
+            patch(_PATCH_TG_ANSWER, return_value=True),
+            patch(_PATCH_REPO_LIST_SUMMARY, return_value=rows),
+            patch(_PATCH_TG_SEND_PHOTO, return_value=True) as mock_photo,
+            patch(_PATCH_TG_REPLY, return_value=True) as mock_reply,
+        ):
+            for _ in range(5):
+                resp = _post_callback('hist:g:summary:ALL:monthly')
+                assert resp.status_code == 200
+        assert mock_photo.call_count == 5
+        mock_reply.assert_not_called()
+        pngs = [call.args[1] for call in mock_photo.call_args_list]
+        assert all(png.startswith(_PNG_MAGIC) for png in pngs)
+        # Stateless rendering of the two stacked sharex subplots: same
+        # input -> byte-identical output across repeated clicks.
+        assert all(png == pngs[0] for png in pngs)
+
 
 # ── Toggle roundtrip consistency ───────────────────────────────────────────
 
@@ -301,11 +331,11 @@ class TestExtremeValueRendering:
         assert png.startswith(_PNG_MAGIC)
 
 
-# ── Axis currency labels (AC-2.1 / AC-2.2) ─────────────────────────────────
+# ── Axis labels (spec-018 AC-2.x; spec-019 AC-1.x / AC-2.1 / AC-4.x) ──────
 
 
 class TestSummaryAxisLabels:
-    """Currency labels must match the selected market."""
+    """Axis titles, currencies and stacked-subplot layout per market."""
 
     def _capture_figure(
         self,
@@ -332,6 +362,8 @@ class TestSummaryAxisLabels:
         assert len(axes) == 1
         assert axes[0].get_ylabel() == 'US P&L (USD)'
         assert 'TWD' not in axes[0].get_ylabel()
+        assert axes[0].get_xlabel() == 'Report period (monthly)'
+        assert axes[0].yaxis.get_major_formatter()(610000) == '610,000'
 
     def test_tw_single_market_axis_says_twd(
         self, monkeypatch: pytest.MonkeyPatch
@@ -341,16 +373,25 @@ class TestSummaryAxisLabels:
         axes = captured[0].axes
         assert len(axes) == 1
         assert axes[0].get_ylabel() == 'TW P&L (TWD)'
+        assert axes[0].get_xlabel() == 'Report period (monthly)'
+        assert axes[0].yaxis.get_major_formatter()(610000) == '610,000'
 
-    def test_all_market_dual_axes_currencies(
+    def test_all_market_stacked_subplots_currencies(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # spec-019 AC-4.1 / AC-4.3: ALL is two stacked sharex subplots
+        # (TW on top, US below), not a twinx right axis.
         captured = self._capture_figure(monkeypatch)
         chart_service.render_summary_chart([_summary(period='2026-03')], market='ALL')
         axes = captured[0].axes
         assert len(axes) == 2
         assert axes[0].get_ylabel() == 'TW P&L (TWD)'
         assert axes[1].get_ylabel() == 'US P&L (USD)'
+        assert axes[0].get_position().y0 > axes[1].get_position().y0
+        assert axes[1].yaxis.get_ticks_position() == 'left'
+        assert axes[0].get_shared_x_axes().joined(axes[0], axes[1])
+        assert axes[0].get_xlabel() == ''
+        assert axes[1].get_xlabel() == 'Report period (monthly)'
 
     def test_symbol_chart_legend_and_title(
         self, monkeypatch: pytest.MonkeyPatch
@@ -365,6 +406,92 @@ class TestSummaryAxisLabels:
         labels = [t.get_text() for t in legend.get_texts()]
         assert labels == ['close', 'avg cost']
         assert ax.get_title() == '2330 (TW) monthly'
+        assert ax.get_ylabel() == 'Price (TWD)'
+        assert ax.get_xlabel() == 'Report period (monthly)'
+
+
+# ── QA-added edge cases beyond the developer G1-G4 / E1-E14 suite ──────────
+
+
+class TestAdditionalLabelEdgeCasesQA:
+    """Edge cases spotted during QA review, not covered by the dev suite."""
+
+    def _capture_figure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> list[Figure]:
+        captured: list[Figure] = []
+        original: Callable[[Figure], bytes] = chart_service._fig_to_png
+
+        def spy(fig: Figure) -> bytes:
+            captured.append(fig)
+            return original(fig)
+
+        monkeypatch.setattr(chart_service, '_fig_to_png', spy)
+        return captured
+
+    def test_twelve_point_monthly_labels_and_fontsize_e10(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # E10: _DEFAULT_RECORDS_LIMIT=12 in YYYY-MM monthly form; 12 close
+        # labels + 1 avg-cost (last point only) at the documented fontsize.
+        captured = self._capture_figure(monkeypatch)
+        rows = [
+            _snapshot(period=f'2026-{month:02d}', price=str(800 + month))
+            for month in range(1, 13)
+        ]
+        chart_service.render_symbol_chart(rows)
+        ax = captured[0].axes[0]
+        value_labels = [t for t in ax.texts if not t.get_text().startswith('PnL ')]
+        assert len(value_labels) == 13  # 12 close + 1 avg-cost (only_last)
+        assert all(
+            t.get_fontsize() == chart_service._LABEL_FONTSIZE for t in value_labels
+        )
+        xtick_texts = [t.get_text() for t in ax.get_xticklabels()]
+        assert xtick_texts == [f'2026-{month:02d}' for month in range(1, 13)]
+
+    @pytest.mark.parametrize(
+        ('pnl_pct', 'expected'),
+        [
+            ('-99.99', 'PnL -99.99%'),
+            ('9999.99', 'PnL +9999.99%'),
+        ],
+    )
+    def test_pnl_pct_extreme_values_format_correctly(
+        self, monkeypatch: pytest.MonkeyPatch, pnl_pct: str, expected: str
+    ) -> None:
+        captured = self._capture_figure(monkeypatch)
+        chart_service.render_symbol_chart(
+            [_snapshot(period='2026-03', pnl_pct=pnl_pct)]
+        )
+        ax = captured[0].axes[0]
+        pnl_texts = [t.get_text() for t in ax.texts if t.get_text().startswith('PnL ')]
+        assert pnl_texts == [expected]
+
+    def test_all_summary_tw_all_nan_us_has_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # TW side entirely runtime-None (defensive NaN) while US has real
+        # data: TW subplot must still render (title/labels/legend) with no
+        # value labels or visible line points; US subplot is unaffected.
+        captured = self._capture_figure(monkeypatch)
+        rows = [
+            replace(_summary(period='2026-02'), pnl_tw_total=None),  # type: ignore[arg-type]
+            replace(_summary(period='2026-03'), pnl_tw_total=None),  # type: ignore[arg-type]
+        ]
+        chart_service.render_summary_chart(rows, market='ALL')
+        axes = captured[0].axes
+        assert len(axes) == 2
+        tw_texts = [t.get_text() for t in axes[0].texts]
+        us_texts = [t.get_text() for t in axes[1].texts]
+        assert tw_texts == []
+        assert us_texts == ['8,000', '8,000']
+        # Structure (ylabel/legend/title) is still emitted for the empty
+        # TW subplot; it just carries no NaN-skipped point labels.
+        assert axes[0].get_ylabel() == 'TW P&L (TWD)'
+        legend = axes[0].get_legend()
+        assert legend is not None
+        assert [t.get_text() for t in legend.get_texts()] == ['TW P&L (TWD)']
 
 
 # ── Caption safety: plain text, no parse_mode ──────────────────────────────

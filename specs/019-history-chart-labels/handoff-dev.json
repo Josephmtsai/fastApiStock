@@ -1,0 +1,20 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "019-history-chart-labels",
+  "status": "ready",
+  "summary": "chart_service: X-axis title 'Report period (<type>)', symbol Y-axis 'Price (TWD|USD)', StrMethodFormatter thousands ticks ({x:,.2f} price / {x:,.0f} P&L), per-point value labels (avg cost last point only), pnl% moved to an axes-fraction boxed text at (0.98, 0.95), faint horizontal grid, and the ALL summary rendered as two stacked sharex subplots (8x6.5) via add_subplot(211)/(212, sharex). render_* signatures and history_handler unchanged.",
+  "changed_files": [
+    "src/fastapistock/services/chart_service.py",
+    "tests/test_chart_service.py",
+    "tests/test_history_chart_qa.py",
+    "specs/019-history-chart-labels/handoff-dev.json"
+  ],
+  "ac_ref": "specs/019-history-chart-labels/tasks.md",
+  "notes": [
+    "Deviation from spec suggestion: render_symbol_chart uses ax.margins(x=0.08, y=0.25) instead of y=0.15; with 0.15 the top-right pnl box covered the last close label when the last point is the series maximum (verified on a rendered sample). Value is non-asserted per spec.",
+    "_plot_dual_axis and _annotate_last_pnl removed; _plot_symbol_lines added to keep render_symbol_chart under 50 lines.",
+    "Coverage: chart_service.py 100% lines; full suite 836 passed, total 85%.",
+    "Working tree shared with feature 019-us-push-market-open during this session (its files were staged in the index by another agent); commits here used explicit pathspecs so none of those files are included."
+  ]
+}
