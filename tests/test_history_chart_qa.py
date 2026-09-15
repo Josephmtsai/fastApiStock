@@ -7,7 +7,8 @@ Covers scenarios beyond the developer suite:
 * Weekly/monthly toggle roundtrip — keyboard and content stay consistent.
 * ``hist:r:menu`` reset followed by a complete re-selection flow.
 * Extreme values (negative PnL, huge totals, huge pnl_pct) still render.
-* Summary chart axis labels carry the correct currency per market.
+* Summary chart axis labels carry the correct currency per market; ALL
+  renders two stacked sharex subplots (spec-019).
 * ``sendPhoto`` caption is plain text (no ``parse_mode``) so Markdown
   metacharacters cannot break delivery.
 * ``g`` step segment-count guards (E10 analogue for the chart step).
@@ -301,11 +302,11 @@ class TestExtremeValueRendering:
         assert png.startswith(_PNG_MAGIC)
 
 
-# ── Axis currency labels (AC-2.1 / AC-2.2) ─────────────────────────────────
+# ── Axis labels (spec-018 AC-2.x; spec-019 AC-1.x / AC-2.1 / AC-4.x) ──────
 
 
 class TestSummaryAxisLabels:
-    """Currency labels must match the selected market."""
+    """Axis titles, currencies and stacked-subplot layout per market."""
 
     def _capture_figure(
         self,
@@ -332,6 +333,8 @@ class TestSummaryAxisLabels:
         assert len(axes) == 1
         assert axes[0].get_ylabel() == 'US P&L (USD)'
         assert 'TWD' not in axes[0].get_ylabel()
+        assert axes[0].get_xlabel() == 'Report period (monthly)'
+        assert axes[0].yaxis.get_major_formatter()(610000) == '610,000'
 
     def test_tw_single_market_axis_says_twd(
         self, monkeypatch: pytest.MonkeyPatch
@@ -341,16 +344,25 @@ class TestSummaryAxisLabels:
         axes = captured[0].axes
         assert len(axes) == 1
         assert axes[0].get_ylabel() == 'TW P&L (TWD)'
+        assert axes[0].get_xlabel() == 'Report period (monthly)'
+        assert axes[0].yaxis.get_major_formatter()(610000) == '610,000'
 
-    def test_all_market_dual_axes_currencies(
+    def test_all_market_stacked_subplots_currencies(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # spec-019 AC-4.1 / AC-4.3: ALL is two stacked sharex subplots
+        # (TW on top, US below), not a twinx right axis.
         captured = self._capture_figure(monkeypatch)
         chart_service.render_summary_chart([_summary(period='2026-03')], market='ALL')
         axes = captured[0].axes
         assert len(axes) == 2
         assert axes[0].get_ylabel() == 'TW P&L (TWD)'
         assert axes[1].get_ylabel() == 'US P&L (USD)'
+        assert axes[0].get_position().y0 > axes[1].get_position().y0
+        assert axes[1].yaxis.get_ticks_position() == 'left'
+        assert axes[0].get_shared_x_axes().joined(axes[0], axes[1])
+        assert axes[0].get_xlabel() == ''
+        assert axes[1].get_xlabel() == 'Report period (monthly)'
 
     def test_symbol_chart_legend_and_title(
         self, monkeypatch: pytest.MonkeyPatch
@@ -365,6 +377,8 @@ class TestSummaryAxisLabels:
         labels = [t.get_text() for t in legend.get_texts()]
         assert labels == ['close', 'avg cost']
         assert ax.get_title() == '2330 (TW) monthly'
+        assert ax.get_ylabel() == 'Price (TWD)'
+        assert ax.get_xlabel() == 'Report period (monthly)'
 
 
 # ── Caption safety: plain text, no parse_mode ──────────────────────────────
