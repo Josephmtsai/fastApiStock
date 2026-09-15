@@ -1,0 +1,23 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "019-history-chart-labels",
+  "status": "ready",
+  "summary": "只改 chart_service.py 與測試：補 X 軸標題 (Report period (weekly|monthly))、個股 Y 軸幣別 (Price (TWD|USD))、StrMethodFormatter 千分位刻度、每點數值標籤、pnl% 改為 axes-fraction 底色文字框、總覽 ALL 由 twinx 改為 add_subplot(211)/(212, sharex) 上下兩子圖 (8x6.5)、Y 軸淡色格線；render_* 簽名與 history_handler 不動",
+  "artifacts": [
+    "specs/019-history-chart-labels/spec.md",
+    "specs/019-history-chart-labels/tasks.md"
+  ],
+  "assumptions": [
+    "feature branch feat/019-history-chart-labels 已存在且為目前 checkout（git status），T0 為確認而非新建",
+    "pnl% 註解文字由 '+14.29%' 改為 'PnL +14.29%'（加前綴讓意義明確，回應使用者「看不出顯示的數值」）；若 orchestrator 要求維持原格式，只需改 _annotate_pnl_box 的字串與 G1/AC-3.1 斷言",
+    "pnl 文字框改掛 axes fraction (0.98, 0.95)，不再依賴末點 close 座標；因此末點 close 為 NaN 但 pnl_pct 非 None 時仍顯示（E5，與 spec-018 的 NaN 略過行為不同）",
+    "個股價格刻度與標籤採 ',.2f'（與 history_handler._format_decimal 一致）；P&L 金額採 ',.0f'（依設計範例 610,000）；P&L 標籤不加 '+' 號以與刻度格式一致",
+    "avg cost 只標末點；末點 NaN 時不回溯前一個非 NaN 點（E9）",
+    "總覽 ALL 標題只放在上方子圖 (axes[0].set_title)，不使用 fig.suptitle，避免 suptitle 與 tight_layout 重疊問題",
+    "fig.subplots() 在 matplotlib 3.11 stubs 對 nrows=2 預設 squeeze 回傳 Any，違反 Any 禁令，故規定用 fig.add_subplot(211) / add_subplot(212, sharex=ax_top)",
+    "既有 test_all_market_dual_axes_currencies 改為 stacked 後不會變紅（兩子圖同樣 len(axes)==2 且 ylabel 相同），必須加位置/ticks_position/xlabel 斷言才能區分 twinx 與 stacked，故列為改寫而非單純刪除",
+    "prompt 稱 mypy strict：已驗證 mypy.ini strict=True、warn_unused_ignores=False；pyproject.toml 無 [tool.mypy] 區塊，pre-commit 以 --config-file=mypy.ini 執行",
+    "matplotlib 3.11.0 已鎖定於 uv.lock，StrMethodFormatter / annotate(xy: tuple[Any, Any]) 皆有型別，不需新增依賴或 type: ignore"
+  ]
+}
