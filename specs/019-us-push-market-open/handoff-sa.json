@@ -1,0 +1,25 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "019-us-push-market-open",
+  "status": "ready",
+  "branch": "feature/019-us-push-market-open",
+  "summary": "is_us_market_window 改為把 now 轉成 America/New_York，以 Mon–Fri 09:30 <= t < 16:00 ET（半開區間、DST-aware）判定，取消台北 17:00 起的盤前推播；簽章不變，重寫 TestUsMarketWindow 為 39 筆夏令/冬令/DST 切換/naive 真值表，更新 architecture.md 與 .env.example 描述",
+  "artifacts": [
+    "specs/019-us-push-market-open/spec.md",
+    "specs/019-us-push-market-open/tasks.md",
+    "specs/019-us-push-market-open/handoff-sa.json"
+  ],
+  "assumptions": [
+    "選定方案 (a)：全部改用 ET 判定 Mon–Fri 09:30–16:00，不保留台北 Tue–Sat 00:00–04:00 分支。",
+    "邊界採半開區間 09:30 <= t_ET < 16:00：16:00 ET 收盤 tick 不推。主因是 _previous_us_trading_date（不動）以 local.hour <= 4 判斷前一日盤中，若 inclusive 則冬令 16:00 EST = 台北 05:00 會把當日盤日期當 baseline，PnL delta 基準錯誤；半開區間下所有 in-window tick 的台北 hour 皆 <= 4 或 >= 21，該啟發式全部成立。",
+    "naive datetime 視為 Asia/Taipei（replace tzinfo）為防禦性補強（E5），避免 Railway（UTC）系統時區誤判；若 orchestrator 認為超出範圍可刪除該兩行與 N1 測試，不影響其他 AC。",
+    "scheduler.py 自行宣告 _ET_TZ 常數，不 import us_stock_repo 的私有 _ET_TZ。",
+    ".env.example L23 註解一併更新（orchestrator 只列 docs/architecture.md，但該註解描述同一 window，維持文件一致）。",
+    "daily_pnl_us（04:05 台北）與 us_daily_close_snapshot（04:10 台北）為固定台北時間 cron，冬令時對應 15:05/15:10 EST（收盤前）；屬既有問題，本次不改，建議另開 feature 改為 ET-aware。",
+    "美股假日與半日市不處理，與現況相同。",
+    "IntervalTrigger(minutes=30) 無 start_date，tick 不對齊 :00/:30；邊界 inclusive/exclusive 主要影響測試語意，實務上恰落在 16:00 ET 的 tick 極少。",
+    "2026 年美國 DST：3/8（日）開始、11/1（日）結束；spec 中所有日期已人工驗證週幾（2026-01-12、07-06、03-09、11-02 為週一；03-08、11-01 為週日）。",
+    "tests/test_scheduler.py 其他 class（TestScheduledPush 以 patch mock is_us_market_window）不受影響，不得修改。"
+  ]
+}

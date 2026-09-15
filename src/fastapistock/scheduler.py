@@ -23,6 +23,9 @@ from fastapistock.services.telegram_service import send_text_message
 logger = logging.getLogger(__name__)
 
 _TZ = ZoneInfo('Asia/Taipei')
+_ET_TZ = ZoneInfo('America/New_York')
+_US_OPEN_MINUTES = 9 * 60 + 30  # 09:30 ET
+_US_CLOSE_MINUTES = 16 * 60  # 16:00 ET (exclusive)
 
 
 def is_tw_market_window(now: datetime) -> bool:
@@ -43,24 +46,29 @@ def is_tw_market_window(now: datetime) -> bool:
 
 
 def is_us_market_window(now: datetime) -> bool:
-    """Return True when *now* falls in the US stock push window.
+    """Return True when *now* falls in the US regular-session push window.
 
-    Window: Monday–Friday 17:00 onwards (start of US session in Taipei time)
-    or Tuesday–Saturday 00:00–04:00 (overnight continuation).
+    Window: Monday–Friday 09:30 <= t < 16:00 America/New_York (DST-aware).
+    In Taipei terms this is 21:30–03:59 (next day) during US daylight time
+    and 22:30–04:59 (next day) during US standard time. Weekday is judged
+    on the Eastern-Time calendar, so Saturday 03:00 Taipei (= Friday
+    afternoon ET) is inside and Monday 03:00 Taipei (= Sunday ET) is not.
 
     Args:
-        now: Current datetime; must already be in Asia/Taipei timezone.
+        now: Current datetime in Asia/Taipei (timezone-aware). A naive
+            datetime is treated as Asia/Taipei wall-clock time; any other
+            tz-aware datetime is converted correctly.
 
     Returns:
         True if a US stock push should be sent.
     """
-    weekday = now.weekday()  # Mon=0 … Sun=6
-    minutes = now.hour * 60 + now.minute
-    if minutes >= 17 * 60:
-        return weekday <= 4  # Mon–Fri evening
-    if minutes <= 4 * 60:
-        return 1 <= weekday <= 5  # Tue–Sat early morning
-    return False
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=_TZ)
+    et = now.astimezone(_ET_TZ)
+    if et.weekday() > 4:  # Saturday=5, Sunday=6 on the ET calendar
+        return False
+    minutes = et.hour * 60 + et.minute
+    return _US_OPEN_MINUTES <= minutes < _US_CLOSE_MINUTES
 
 
 def push_tw_stocks() -> None:

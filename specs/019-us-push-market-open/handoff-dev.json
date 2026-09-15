@@ -1,0 +1,26 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "019-us-push-market-open",
+  "status": "ready",
+  "branch": "feature/019-us-push-market-open",
+  "summary": "is_us_market_window 改為將 now 轉成 America/New_York 後以 Mon–Fri 09:30 <= t < 16:00 ET（半開區間、DST-aware）判定，naive datetime 視為 Asia/Taipei；TestUsMarketWindow 重寫為 39 筆夏令/冬令/DST 切換/naive 參數化真值表，新增 _previous_us_trading_date 冬令 04:30 回歸測試；docs/architecture.md 與 .env.example 的 window 描述同步更新",
+  "changed_files": [
+    "src/fastapistock/scheduler.py",
+    "tests/test_scheduler.py",
+    "docs/architecture.md",
+    ".env.example"
+  ],
+  "ac_ref": "specs/019-us-push-market-open/tasks.md",
+  "verification": {
+    "ruff": "check passed; format reformatted tests/test_scheduler.py only",
+    "mypy": "src/ clean",
+    "pytest": "816 passed, 85% coverage; tests/test_scheduler.py 84 passed (TestUsMarketWindow 39 cases)",
+    "pre_commit": "all hooks passed"
+  },
+  "notes": [
+    "TestScheduledPush、_previous_us_trading_date、_fetch_premarket_price、telegram [盤前] 邏輯未改動（git diff 無觸及）。",
+    "docs/architecture.md L212 其他過時敘述（如「註冊三個 job」）與 L223 TW label 08:30 依 spec 不動。",
+    "工作區內 src/fastapistock/services/chart_service.py、.claude/settings.local.json、.vscode/、specs/019-history-chart-labels/ 為其他工作的異動，未 stage。"
+  ]
+}

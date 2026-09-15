@@ -81,47 +81,86 @@ class TestTwMarketWindow:
 # ── US Market Window ────────────────────────────────────────────────────────
 
 
+_US_WINDOW_SUMMER: list[tuple[datetime, bool, str]] = [
+    # (Taipei time, expected, reason) — EDT: Taipei = ET + 12h
+    (datetime(2026, 7, 6, 17, 0, tzinfo=_TZ), False, 'S1 Mon 05:00 EDT premarket'),
+    (datetime(2026, 7, 6, 21, 29, tzinfo=_TZ), False, 'S2 Mon 09:29 EDT'),
+    (datetime(2026, 7, 6, 21, 30, tzinfo=_TZ), True, 'S3 Mon 09:30 EDT open'),
+    (datetime(2026, 7, 7, 0, 0, tzinfo=_TZ), True, 'S4 Mon 12:00 EDT'),
+    (datetime(2026, 7, 7, 3, 59, tzinfo=_TZ), True, 'S5 Mon 15:59 EDT'),
+    (datetime(2026, 7, 7, 4, 0, tzinfo=_TZ), False, 'S6 Mon 16:00 EDT close'),
+    (datetime(2026, 7, 10, 23, 0, tzinfo=_TZ), True, 'S7 Fri 11:00 EDT'),
+    (datetime(2026, 7, 11, 3, 30, tzinfo=_TZ), True, 'S8 Fri 15:30 EDT'),
+    (datetime(2026, 7, 11, 4, 0, tzinfo=_TZ), False, 'S9 Fri 16:00 EDT close'),
+    (datetime(2026, 7, 11, 22, 0, tzinfo=_TZ), False, 'S10 Sat 10:00 EDT'),
+    (datetime(2026, 7, 12, 22, 0, tzinfo=_TZ), False, 'S11 Sun 10:00 EDT'),
+    (datetime(2026, 7, 13, 3, 0, tzinfo=_TZ), False, 'S12 Sun 15:00 EDT'),
+]
+
+_US_WINDOW_WINTER: list[tuple[datetime, bool, str]] = [
+    # EST: Taipei = ET + 13h
+    (datetime(2026, 1, 12, 17, 0, tzinfo=_TZ), False, 'W1 Mon 04:00 EST premarket'),
+    (datetime(2026, 1, 12, 21, 30, tzinfo=_TZ), False, 'W2 Mon 08:30 EST'),
+    (datetime(2026, 1, 12, 22, 29, tzinfo=_TZ), False, 'W3 Mon 09:29 EST'),
+    (datetime(2026, 1, 12, 22, 30, tzinfo=_TZ), True, 'W4 Mon 09:30 EST open'),
+    (datetime(2026, 1, 13, 4, 30, tzinfo=_TZ), True, 'W5 Mon 15:30 EST'),
+    (datetime(2026, 1, 13, 4, 59, tzinfo=_TZ), True, 'W6 Mon 15:59 EST'),
+    (datetime(2026, 1, 13, 5, 0, tzinfo=_TZ), False, 'W7 Mon 16:00 EST close'),
+    (datetime(2026, 1, 17, 4, 30, tzinfo=_TZ), True, 'W8 Fri 15:30 EST'),
+    (datetime(2026, 1, 17, 5, 0, tzinfo=_TZ), False, 'W9 Fri 16:00 EST close'),
+    (datetime(2026, 1, 12, 4, 0, tzinfo=_TZ), False, 'W10 Sun 15:00 EST'),
+    (datetime(2026, 1, 18, 23, 0, tzinfo=_TZ), False, 'W11 Sun 10:00 EST'),
+]
+
+_US_WINDOW_DST_SWITCH: list[tuple[datetime, bool, str]] = [
+    # Spring forward 2026-03-08 (Sun); fall back 2026-11-01 (Sun)
+    (datetime(2026, 3, 6, 21, 30, tzinfo=_TZ), False, 'D1 Fri 08:30 EST'),
+    (datetime(2026, 3, 6, 22, 30, tzinfo=_TZ), True, 'D2 Fri 09:30 EST'),
+    (datetime(2026, 3, 7, 4, 30, tzinfo=_TZ), True, 'D3 Fri 15:30 EST'),
+    (datetime(2026, 3, 7, 5, 0, tzinfo=_TZ), False, 'D4 Fri 16:00 EST close'),
+    (datetime(2026, 3, 9, 21, 29, tzinfo=_TZ), False, 'D5 Mon 09:29 EDT'),
+    (datetime(2026, 3, 9, 21, 30, tzinfo=_TZ), True, 'D6 Mon 09:30 EDT open'),
+    (datetime(2026, 3, 10, 3, 59, tzinfo=_TZ), True, 'D7 Mon 15:59 EDT'),
+    (datetime(2026, 3, 10, 4, 0, tzinfo=_TZ), False, 'D8 Mon 16:00 EDT close'),
+    (datetime(2026, 10, 30, 21, 30, tzinfo=_TZ), True, 'D9 Fri 09:30 EDT open'),
+    (datetime(2026, 10, 31, 3, 59, tzinfo=_TZ), True, 'D10 Fri 15:59 EDT'),
+    (datetime(2026, 10, 31, 4, 0, tzinfo=_TZ), False, 'D11 Fri 16:00 EDT close'),
+    (datetime(2026, 11, 2, 21, 30, tzinfo=_TZ), False, 'D12 Mon 08:30 EST'),
+    (datetime(2026, 11, 2, 22, 30, tzinfo=_TZ), True, 'D13 Mon 09:30 EST open'),
+    (datetime(2026, 11, 3, 4, 30, tzinfo=_TZ), True, 'D14 Mon 15:30 EST'),
+    (datetime(2026, 11, 3, 5, 0, tzinfo=_TZ), False, 'D15 Mon 16:00 EST close'),
+]
+
+_US_WINDOW_NAIVE: list[tuple[datetime, bool, str]] = [
+    # Naive datetime is treated as Asia/Taipei wall-clock (E5)
+    (datetime(2026, 7, 6, 21, 30), True, 'N1 naive -> Mon 09:30 EDT open'),
+]
+
+
 class TestUsMarketWindow:
-    def test_1700_wednesday_is_in(self) -> None:
-        assert is_us_market_window(_dt(2, 17, 0)) is True
+    """Truth table for is_us_market_window (spec 019 G1, ET-based, DST-aware).
 
-    def test_1659_wednesday_is_out(self) -> None:
-        assert is_us_market_window(_dt(2, 16, 59)) is False
+    Window is Mon–Fri 09:30 <= t < 16:00 America/New_York; the ``reason``
+    column carries the ET wall-clock so a failing row is self-explanatory.
+    """
 
-    def test_0400_thursday_is_in(self) -> None:
-        # 04:00 Thu = continuation of Wed evening session
-        assert is_us_market_window(_dt(3, 4, 0)) is True
+    @pytest.mark.parametrize(('now', 'expected', 'reason'), _US_WINDOW_SUMMER)
+    def test_summer_edt(self, now: datetime, expected: bool, reason: str) -> None:
+        assert is_us_market_window(now) is expected, reason
 
-    def test_0401_thursday_is_out(self) -> None:
-        assert is_us_market_window(_dt(3, 4, 1)) is False
+    @pytest.mark.parametrize(('now', 'expected', 'reason'), _US_WINDOW_WINTER)
+    def test_winter_est(self, now: datetime, expected: bool, reason: str) -> None:
+        assert is_us_market_window(now) is expected, reason
 
-    def test_sunday_2000_is_out(self) -> None:
-        assert is_us_market_window(_dt(6, 20, 0)) is False
+    @pytest.mark.parametrize(('now', 'expected', 'reason'), _US_WINDOW_DST_SWITCH)
+    def test_dst_switch_weeks(self, now: datetime, expected: bool, reason: str) -> None:
+        assert is_us_market_window(now) is expected, reason
 
-    def test_saturday_0300_is_in(self) -> None:
-        # 03:00 Sat = continuation of Fri evening session
-        assert is_us_market_window(_dt(5, 3, 0)) is True
-
-    def test_saturday_0500_is_out(self) -> None:
-        assert is_us_market_window(_dt(5, 5, 0)) is False
-
-    def test_monday_0300_is_out(self) -> None:
-        # 03:00 Mon = would be Sun evening, which has no US session
-        assert is_us_market_window(_dt(0, 3, 0)) is False
-
-    def test_friday_1700_is_in(self) -> None:
-        assert is_us_market_window(_dt(4, 17, 0)) is True
-
-    def test_friday_2300_is_in(self) -> None:
-        assert is_us_market_window(_dt(4, 23, 0)) is True
-
-    def test_tuesday_0000_is_in(self) -> None:
-        # 00:00 Tue = continuation of Mon evening
-        assert is_us_market_window(_dt(1, 0, 0)) is True
-
-    def test_saturday_0400_is_in(self) -> None:
-        # Exactly 04:00 Sat = last valid tick
-        assert is_us_market_window(_dt(5, 4, 0)) is True
+    @pytest.mark.parametrize(('now', 'expected', 'reason'), _US_WINDOW_NAIVE)
+    def test_naive_datetime_treated_as_taipei(
+        self, now: datetime, expected: bool, reason: str
+    ) -> None:
+        assert is_us_market_window(now) is expected, reason
 
 
 # ── Push Functions ─────────────────────────────────────────────────────────
@@ -350,6 +389,14 @@ class TestDailyCloseSnapshots:
         tuesday_before_close = datetime(2026, 5, 19, 3, 30, tzinfo=_TZ)
 
         assert _previous_us_trading_date(tuesday_before_close) == '2026-05-15'
+
+    def test_previous_us_trading_date_winter_late_session_uses_prior_close(
+        self,
+    ) -> None:
+        # 04:30 Tue Taipei in EST = Mon 15:30 ET, still Monday's session (E8)
+        tuesday_winter_late = datetime(2026, 1, 13, 4, 30, tzinfo=_TZ)
+
+        assert _previous_us_trading_date(tuesday_winter_late) == '2026-01-09'
 
 
 class TestMonthlyReportTrigger:

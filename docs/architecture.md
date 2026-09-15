@@ -209,7 +209,7 @@ sequenceDiagram
 
 ## 2. APScheduler 排程觸發流程圖
 
-`scheduler.py::build_scheduler()` 註冊三個 job：30 分鐘 interval 的 `_scheduled_push`（依時段分流 TW/US），以及每週日 21:00、每月 1 日 21:00 的 cron report。時段由 `is_tw_market_window` / `is_us_market_window` 以 Asia/Taipei 判定。
+`scheduler.py::build_scheduler()` 註冊三個 job：30 分鐘 interval 的 `_scheduled_push`（依時段分流 TW/US），以及每週日 21:00、每月 1 日 21:00 的 cron report。時段由 `is_tw_market_window` 以 Asia/Taipei 判定；`is_us_market_window` 先將 now 轉為 America/New_York，以美東常規盤 Mon–Fri 09:30–16:00 ET（DST-aware，夏令 21:30–04:00 / 冬令 22:30–05:00 台北）判定。
 
 ```mermaid
 flowchart LR
@@ -221,7 +221,7 @@ flowchart LR
 
     J1 --> TICK{now in Asia/Taipei}
     TICK -->|is_tw_market_window<br/>Mon–Fri 08:30–14:00| PUSH_TW[push_tw_stocks]
-    TICK -->|is_us_market_window<br/>Mon–Fri 17:00+ /<br/>Tue–Sat 00:00–04:00| PUSH_US[push_us_stocks]
+    TICK -->|is_us_market_window<br/>Mon–Fri 09:30–16:00 ET<br/>夏令 21:30–04:00 / 冬令 22:30–05:00 台北| PUSH_US[push_us_stocks]
 
     PUSH_TW --> SS[services/stock_service<br/>get_rich_tw_stocks]
     PUSH_US --> USS[services/us_stock_service<br/>get_us_stocks]
