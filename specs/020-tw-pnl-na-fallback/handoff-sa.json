@@ -1,0 +1,27 @@
+{
+  "from": "sa",
+  "to": "developer",
+  "feature": "020-tw-pnl-na-fallback",
+  "status": "ready",
+  "branch": "feature/020-tw-pnl-na-fallback",
+  "summary": "fetch_pnl_tw 在 I19 無法解析（#N/A）時改走逐列重算：shares>0 且 I 為數值者直接採用，I 非數值者以 stock_service.get_rich_tw_stock 即時價計算 shares*price-(D-E)，任一取價失敗回傳 None；fallback 實作於 portfolio_repo（_fetch_pnl_cell 新增可選 fallback 參數），結果不寫入 pnl:tw:<date> 快取；US 路徑與訊息格式不變，既有測試無必壞項。",
+  "artifacts": [
+    "specs/020-tw-pnl-na-fallback/spec.md",
+    "specs/020-tw-pnl-na-fallback/tasks.md",
+    "specs/020-tw-pnl-na-fallback/handoff-sa.json"
+  ],
+  "assumptions": [
+    "Fallback 放在 repository 層（portfolio_repo），因 report_service.py:363 直接呼叫 portfolio_repo.fetch_pnl_tw；放 service 層需改呼叫點與多個測試 patch 目標。",
+    "取價使用 stock_service.get_rich_tw_stock(code).price，於 portfolio_repo 函式內 lazy import 以避開循環（stock_service 在 module level import portfolio_repo）；專案已有 lazy import 先例（scheduler.py:89、report_service.py:523、webhook.py:208）；ruff 規則集 E,F,I,UP,S,B 不含 PLC0415。",
+    "get_rich_tw_stock 提供 rich_tw:<code>:<date> 300s Redis 快取 + fetch_tw_rich_stock 的 SystemRandom 0.1–0.5s 隨機延遲，滿足台股隨機延遲與 local cache 規範；且與 30 分鐘 TW 個股推播共用快取鍵，多半命中。",
+    "Fallback 結果不寫入 pnl:tw:<date>：PORTFOLIO_CACHE_TTL 預設 3600s，快取會凍結即時價 1 小時並延遲 Sheet 恢復；不快取成本僅每次一次 CSV 下載。",
+    "持股列範圍為 rows[1:18]（表頭後、I19 總計列前），以 symbol 非空判斷，不使用 isdigit()，以涵蓋 00687B 類英數代號；fetch_portfolio 的 isdigit 過濾不改。",
+    "I 欄空白（shares>0）視同非數值而走重算；D/E 空白視為 0。",
+    "無任何 shares>0 持股列時回傳 None（不回 0.0），避免以 0 污染收盤基準快照。",
+    "I19 為空白字串時維持既有 _parse_number 行為（0.0，不觸發 fallback），不擴充需求。",
+    "目標格超出範圍時不觸發 fallback（視為 Sheet 版面異常），維持 ERROR + None。",
+    "上櫃代號（.TWO）取價不支援；若需重算的代號 yfinance 查無資料則依 AC6 回傳 None。",
+    "即時價（fast_info.last_price）與 Sheet 其他列的 GOOGLEFINANCE 延遲價混用，可接受。",
+    "Affected Tests：無必壞測試；tests/test_portfolio_repo_pnl.py 既有 9 個測試因 fixture I19 為合法數值而不受影響；service/report 層測試皆 mock fetch_pnl_tw。"
+  ]
+}
