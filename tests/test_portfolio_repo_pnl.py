@@ -375,9 +375,20 @@ class TestFetchPnlTwFallback:
     def test_fallback_returns_none_when_price_non_positive_or_nan(
         self, bad_price: float
     ) -> None:
-        result, _ = _run_tw(_golden_rows(), _price_returning(bad_price))
+        result, mock_cache = _run_tw(_golden_rows(), _price_returning(bad_price))
 
         assert result is None
+        mock_cache.put.assert_not_called()
+
+    def test_fallback_recomputes_row_with_non_finite_pnl(self) -> None:
+        rows = _golden_rows()
+        rows[1][8] = 'nan'  # 0050 column I non-finite -> recompute path
+        price = _price_returning(60.0)
+
+        result, _ = _run_tw(rows, price)
+
+        assert result == pytest.approx(5792545.0)
+        price.assert_called_once_with('0050')
 
     def test_fallback_returns_none_when_any_of_multiple_fails(
         self, caplog: pytest.LogCaptureFixture
@@ -467,6 +478,9 @@ class TestParseOptionalNumber:
             ('  ', None),
             ('1,234', 1234.0),
             ('-5', -5.0),
+            ('nan', None),
+            ('inf', None),
+            ('-inf', None),
         ],
     )
     def test_parse(self, raw: str, expected: float | None) -> None:

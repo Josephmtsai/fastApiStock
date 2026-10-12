@@ -235,15 +235,17 @@ def _parse_optional_number(raw: str) -> float | None:
         raw: Raw cell value such as '1,234', '-5', '#N/A', or ''.
 
     Returns:
-        Parsed float, or None when the cell is blank or not numeric.
+        Parsed finite float, or None when the cell is blank, not numeric, or
+        non-finite (e.g. 'nan', 'inf').
     """
     stripped = raw.strip().replace(',', '')
     if not stripped:
         return None
     try:
-        return float(stripped)
+        value = float(stripped)
     except ValueError:
         return None
+    return value if math.isfinite(value) else None
 
 
 def _cell(row: list[str], col: int) -> str:
