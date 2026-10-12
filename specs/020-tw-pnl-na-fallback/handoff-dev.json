@@ -1,0 +1,24 @@
+{
+  "from": "developer",
+  "to": "qa",
+  "feature": "020-tw-pnl-na-fallback",
+  "status": "ready",
+  "branch": "feature/020-tw-pnl-na-fallback",
+  "summary": "fetch_pnl_tw 在 I19 無法解析時改走逐列重算：新增 _parse_optional_number、_cell、_fetch_tw_live_price（lazy import stock_service.get_rich_tw_stock）、_recompute_na_row、_scan_tw_holdings、_recompute_tw_pnl；_fetch_pnl_cell 新增可選 fallback 參數（結果不寫快取），並抽出 _download_csv_rows 以維持函式 <=50 行；US 路徑不變。新增 TestFetchPnlTwFallback、TestParseOptionalNumber 與 US #N/A 回歸測試。",
+  "changed_files": [
+    "src/fastapistock/repositories/portfolio_repo.py",
+    "tests/test_portfolio_repo_pnl.py",
+    "specs/020-tw-pnl-na-fallback/spec.md",
+    "specs/020-tw-pnl-na-fallback/tasks.md",
+    "specs/020-tw-pnl-na-fallback/handoff-sa.json",
+    "specs/020-tw-pnl-na-fallback/handoff-dev.json"
+  ],
+  "ac_ref": "specs/020-tw-pnl-na-fallback/tasks.md",
+  "notes": [
+    "_download_csv_rows 抽出後 log 文字（HTTP error fetching PnL / Request error fetching PnL）不變。",
+    "有 fallback 時 parse 失敗不輸出 ERROR log（spec G3 允許）；US 路徑保留 ERROR。",
+    "D/E 非空白非數值 -> 該列失敗（E9）；D/E 空白視為 0（新增 test_fallback_treats_blank_buy_sell_as_zero）。",
+    "價格非 finite 或 <=0 時額外 log 'TW live price invalid for <code>: <price>'（WARNING）。",
+    "E7 parametrize 額外加入 inf。E19（row 長度 < 9）併入 test_fallback_includes_alphanumeric_symbol。"
+  ]
+}
